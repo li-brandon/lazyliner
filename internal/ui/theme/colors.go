@@ -1,6 +1,18 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
+
+func init() {
+	// Prevent termenv from querying terminal (causes escape sequence leaks to stdout)
+	renderer := lipgloss.DefaultRenderer()
+	renderer.SetOutput(termenv.NewOutput(os.Stdout, termenv.WithProfile(termenv.TrueColor)))
+	renderer.SetHasDarkBackground(true)
+}
 
 // Linear-inspired color palette
 var (

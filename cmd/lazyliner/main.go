@@ -10,6 +10,8 @@ import (
 	"github.com/brandonli/lazyliner/internal/app"
 	"github.com/brandonli/lazyliner/internal/config"
 	"github.com/brandonli/lazyliner/internal/linear"
+	"github.com/brandonli/lazyliner/internal/ui/theme"
+	"github.com/brandonli/lazyliner/internal/util"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
@@ -135,12 +137,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		if issue.Assignee != nil {
 			assignee = issue.Assignee.Name
 		}
-		priority := priorityLabel(issue.Priority)
+		priority := theme.PriorityLabel(issue.Priority)
 
-		title := issue.Title
-		if len(title) > 50 {
-			title = title[:47] + "..."
-		}
+		title := util.Truncate(issue.Title, 50)
 
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			issue.Identifier,
@@ -179,10 +178,10 @@ func runView(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("╭────────────────────────────────────────────────────────────╮\n")
-	fmt.Printf("│ %s: %s\n", issue.Identifier, truncate(issue.Title, 50))
+	fmt.Printf("│ %s: %s\n", issue.Identifier, util.Truncate(issue.Title, 50))
 	fmt.Printf("├────────────────────────────────────────────────────────────┤\n")
 	fmt.Printf("│ Status:   %s\n", status)
-	fmt.Printf("│ Priority: %s\n", priorityLabel(issue.Priority))
+	fmt.Printf("│ Priority: %s\n", theme.PriorityLabel(issue.Priority))
 	fmt.Printf("│ Assignee: %s\n", assignee)
 	fmt.Printf("│ URL:      %s\n", issue.URL)
 	if issue.BranchName != "" {
@@ -193,7 +192,7 @@ func runView(cmd *cobra.Command, args []string) error {
 	if issue.Description != "" {
 		fmt.Printf("│ Description:\n")
 		for _, line := range strings.Split(issue.Description, "\n") {
-			fmt.Printf("│   %s\n", truncate(line, 56))
+			fmt.Printf("│   %s\n", util.Truncate(line, 56))
 		}
 	} else {
 		fmt.Printf("│ No description\n")
@@ -218,29 +217,4 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error running app: %w", err)
 	}
 	return nil
-}
-
-func priorityLabel(priority int) string {
-	switch priority {
-	case 1:
-		return "Urgent"
-	case 2:
-		return "High"
-	case 3:
-		return "Medium"
-	case 4:
-		return "Low"
-	default:
-		return "None"
-	}
-}
-
-func truncate(s string, width int) string {
-	if len(s) <= width {
-		return s
-	}
-	if width <= 3 {
-		return s[:width]
-	}
-	return s[:width-3] + "..."
 }

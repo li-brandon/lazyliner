@@ -6,8 +6,10 @@ import (
 
 	"github.com/brandonli/lazyliner/internal/linear"
 	"github.com/brandonli/lazyliner/internal/ui/theme"
+	"github.com/brandonli/lazyliner/internal/util"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // ListModel is the issue list view
@@ -145,10 +147,10 @@ func (m ListModel) View() string {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	
+
 	// Add scroll info at bottom right
 	if scrollInfo != "" {
-		content = lipgloss.JoinVertical(lipgloss.Left, content, 
+		content = lipgloss.JoinVertical(lipgloss.Left, content,
 			lipgloss.PlaceHorizontal(m.width, lipgloss.Right, scrollInfo))
 	}
 
@@ -161,9 +163,7 @@ func (m ListModel) renderRow(issue linear.Issue, isSelected bool, idWidth, title
 	if isSelected {
 		baseStyle = theme.ListItemSelectedStyle
 	}
-
-	// Cursor indicator
-	cursor := "  "
+	cursor := "○ "
 	if isSelected {
 		cursor = "● "
 	} else {
@@ -171,10 +171,10 @@ func (m ListModel) renderRow(issue linear.Issue, isSelected bool, idWidth, title
 	}
 
 	// Issue ID
-	id := theme.IssueIDStyle.Render(truncate(issue.Identifier, idWidth))
+	id := theme.IssueIDStyle.Render(util.Truncate(issue.Identifier, idWidth))
 
 	// Title
-	title := truncate(issue.Title, titleWidth)
+	title := util.Truncate(issue.Title, titleWidth)
 	if isSelected {
 		title = lipgloss.NewStyle().Foreground(theme.TextBright).Render(title)
 	} else {
@@ -202,7 +202,7 @@ func (m ListModel) renderRow(issue linear.Issue, isSelected bool, idWidth, title
 	statusIcon := theme.StatusIcon(statusType)
 	status := theme.StatusStyle(statusType).
 		Width(statusWidth).
-		Render(statusIcon + " " + truncate(statusName, statusWidth-3))
+		Render(statusIcon + " " + util.Truncate(statusName, statusWidth-3))
 
 	// Build row
 	row := fmt.Sprintf("%s%s  %s  %s  %s",
@@ -216,24 +216,10 @@ func (m ListModel) renderRow(issue linear.Issue, isSelected bool, idWidth, title
 	return baseStyle.Width(m.width).Render(row)
 }
 
-// truncate truncates a string to the specified width
-func truncate(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if len(s) <= width {
-		return s
-	}
-	if width <= 3 {
-		return s[:width]
-	}
-	return s[:width-3] + "..."
-}
-
-// padRight pads a string to the specified width
 func padRight(s string, width int) string {
-	if len(s) >= width {
+	sw := runewidth.StringWidth(s)
+	if sw >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-sw)
 }

@@ -275,7 +275,6 @@ func formatRelativeTime(t time.Time) string {
 	}
 }
 
-// wordWrap wraps text at the specified width
 func wordWrap(text string, width int) string {
 	if width <= 0 {
 		return text

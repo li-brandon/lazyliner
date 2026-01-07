@@ -1,6 +1,10 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Common styles used throughout the application
 var (
@@ -215,15 +219,6 @@ func StatusIcon(status string) string {
 	}
 }
 
-// Divider returns a horizontal divider of the specified width
 func Divider(width int) string {
-	return DividerStyle.Render(repeat("─", width))
-}
-
-func repeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
-	}
-	return result
+	return DividerStyle.Render(strings.Repeat("─", width))
 }

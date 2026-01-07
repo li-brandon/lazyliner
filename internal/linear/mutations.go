@@ -59,7 +59,7 @@ func (c *Client) CreateIssue(ctx context.Context, input IssueCreateInput) (*Issu
 	var result struct {
 		IssueCreate struct {
 			Success bool      `json:"success"`
-			Issue   *issueRaw `json:"issue"`
+			Issue   *rawIssue `json:"issue"`
 		} `json:"issueCreate"`
 	}
 
@@ -71,7 +71,7 @@ func (c *Client) CreateIssue(ctx context.Context, input IssueCreateInput) (*Issu
 		return nil, nil
 	}
 
-	issues := convertIssues([]issueRaw{*result.IssueCreate.Issue})
+	issues := convertIssues([]rawIssue{*result.IssueCreate.Issue})
 	return &issues[0], nil
 }
 
@@ -131,7 +131,7 @@ func (c *Client) UpdateIssue(ctx context.Context, issueID string, input IssueUpd
 	var result struct {
 		IssueUpdate struct {
 			Success bool      `json:"success"`
-			Issue   *issueRaw `json:"issue"`
+			Issue   *rawIssue `json:"issue"`
 		} `json:"issueUpdate"`
 	}
 
@@ -143,7 +143,7 @@ func (c *Client) UpdateIssue(ctx context.Context, issueID string, input IssueUpd
 		return nil, nil
 	}
 
-	issues := convertIssues([]issueRaw{*result.IssueUpdate.Issue})
+	issues := convertIssues([]rawIssue{*result.IssueUpdate.Issue})
 	return &issues[0], nil
 }
 

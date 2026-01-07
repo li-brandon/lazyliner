@@ -79,7 +79,7 @@ func (c *Client) GetMyIssues(ctx context.Context, limit int) ([]Issue, error) {
 	var result struct {
 		Viewer struct {
 			AssignedIssues struct {
-				Nodes []issueRaw `json:"nodes"`
+				Nodes []rawIssue `json:"nodes"`
 			} `json:"assignedIssues"`
 		} `json:"viewer"`
 	}
@@ -164,7 +164,7 @@ func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) ([]Issue, er
 
 	var result struct {
 		Issues struct {
-			Nodes []issueRaw `json:"nodes"`
+			Nodes []rawIssue `json:"nodes"`
 		} `json:"issues"`
 	}
 
@@ -244,7 +244,7 @@ func (c *Client) GetIssue(ctx context.Context, idOrIdentifier string) (*Issue, e
 	}
 
 	var result struct {
-		Issue *issueRaw `json:"issue"`
+		Issue *rawIssue `json:"issue"`
 	}
 
 	if err := c.execute(ctx, query, variables, &result); err != nil {
@@ -255,7 +255,7 @@ func (c *Client) GetIssue(ctx context.Context, idOrIdentifier string) (*Issue, e
 		return nil, fmt.Errorf("issue not found: %s", idOrIdentifier)
 	}
 
-	issues := convertIssues([]issueRaw{*result.Issue})
+	issues := convertIssues([]rawIssue{*result.Issue})
 	return &issues[0], nil
 }
 
@@ -309,7 +309,7 @@ func (c *Client) SearchIssues(ctx context.Context, query string, limit int) ([]I
 
 	var result struct {
 		SearchIssues struct {
-			Nodes []issueRaw `json:"nodes"`
+			Nodes []rawIssue `json:"nodes"`
 		} `json:"searchIssues"`
 	}
 
@@ -320,8 +320,8 @@ func (c *Client) SearchIssues(ctx context.Context, query string, limit int) ([]I
 	return convertIssues(result.SearchIssues.Nodes), nil
 }
 
-// issueRaw is the raw issue structure from the API with labels as connection
-type issueRaw struct {
+// rawIssue is the raw issue structure from the API with labels as connection
+type rawIssue struct {
 	Issue
 	Labels struct {
 		Nodes []Label `json:"nodes"`
@@ -329,7 +329,7 @@ type issueRaw struct {
 }
 
 // convertIssues converts raw issues to the Issue type
-func convertIssues(raw []issueRaw) []Issue {
+func convertIssues(raw []rawIssue) []Issue {
 	issues := make([]Issue, len(raw))
 	for i, r := range raw {
 		issues[i] = r.Issue
