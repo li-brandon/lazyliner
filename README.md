@@ -165,7 +165,7 @@ lazyliner create
 
 ## Tech Stack
 
-- **Language**: Go 1.22+
+- **Language**: Go (see `go.mod` for required version)
 - **TUI Framework**: [Bubble Tea](https://github.com/charmbracelet/bubbletea)
 - **Styling**: [Lip Gloss](https://github.com/charmbracelet/lipgloss)
 - **Components**: [Bubbles](https://github.com/charmbracelet/bubbles)
