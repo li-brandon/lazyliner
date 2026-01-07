@@ -1,0 +1,79 @@
+version: 2
+
+project_name: lazyliner
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: lazyliner
+    main: ./cmd/lazyliner
+    binary: lazyliner
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: lazyliner
+    repository:
+      owner: brandonli
+      name: homebrew-tap
+    directory: Formula
+    homepage: https://github.com/brandonli/lazyliner
+    description: A beautiful, keyboard-driven terminal TUI for Linear
+    license: MIT
+    skip_upload: auto
+
+nfpms:
+  - id: packages
+    package_name: lazyliner
+    vendor: Brandon Li
+    homepage: https://github.com/brandonli/lazyliner
+    maintainer: Brandon Li
+    description: A beautiful, keyboard-driven terminal TUI for Linear
+    license: MIT
+    formats:
+      - deb
+      - rpm
+
+release:
+  github:
+    owner: brandonli
+    name: lazyliner
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
