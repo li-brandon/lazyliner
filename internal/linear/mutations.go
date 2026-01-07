@@ -78,7 +78,7 @@ func (c *Client) CreateIssue(ctx context.Context, input IssueCreateInput) (*Issu
 // UpdateIssue updates an existing issue
 func (c *Client) UpdateIssue(ctx context.Context, issueID string, input IssueUpdateInput) (*Issue, error) {
 	query := `
-		mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+		mutation UpdateIssue($id: ID!, $input: IssueUpdateInput!) {
 			issueUpdate(id: $id, input: $input) {
 				success
 				issue {
@@ -178,7 +178,7 @@ func (c *Client) UpdateIssueLabels(ctx context.Context, issueID string, labelIDs
 // AddIssueLabel adds a label to an issue
 func (c *Client) AddIssueLabel(ctx context.Context, issueID string, labelID string) error {
 	query := `
-		mutation AddIssueLabel($issueId: String!, $labelId: String!) {
+		mutation AddIssueLabel($issueId: ID!, $labelId: ID!) {
 			issueAddLabel(id: $issueId, labelId: $labelId) {
 				success
 			}
@@ -202,7 +202,7 @@ func (c *Client) AddIssueLabel(ctx context.Context, issueID string, labelID stri
 // RemoveIssueLabel removes a label from an issue
 func (c *Client) RemoveIssueLabel(ctx context.Context, issueID string, labelID string) error {
 	query := `
-		mutation RemoveIssueLabel($issueId: String!, $labelId: String!) {
+		mutation RemoveIssueLabel($issueId: ID!, $labelId: ID!) {
 			issueRemoveLabel(id: $issueId, labelId: $labelId) {
 				success
 			}
@@ -226,7 +226,7 @@ func (c *Client) RemoveIssueLabel(ctx context.Context, issueID string, labelID s
 // DeleteIssue moves an issue to trash
 func (c *Client) DeleteIssue(ctx context.Context, issueID string) error {
 	query := `
-		mutation DeleteIssue($id: String!) {
+		mutation DeleteIssue($id: ID!) {
 			issueDelete(id: $id) {
 				success
 			}

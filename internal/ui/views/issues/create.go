@@ -83,8 +83,13 @@ func NewCreateModel(teams []linear.Team, projects []linear.Project, states []lin
 func (m CreateModel) SetSize(width, height int) CreateModel {
 	m.width = width
 	m.height = height
-	m.titleInput.Width = width - 20
-	m.descInput.SetWidth(width - 20)
+	// Guard against uninitialized model (SetSize may be called before NewCreateModel)
+	if m.titleInput.Placeholder != "" {
+		m.titleInput.Width = width - 20
+	}
+	if m.descInput.Placeholder != "" {
+		m.descInput.SetWidth(width - 20)
+	}
 	return m
 }
 
