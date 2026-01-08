@@ -361,22 +361,650 @@ if issue.State != nil {
 
 ## Adding Features
 
-### New View
-1. Create model in `internal/ui/views/`
-2. Add enum value to `View` in `internal/app/app.go`
-3. Handle in `Update()` and `View()` switch statements
-4. Add navigation keybinding in `keymap.go`
+This section provides detailed, step-by-step examples for adding new functionality to Lazyliner.
 
-### New API Method
-1. Add types in `internal/linear/types.go`
-2. Add query in `queries.go` or mutation in `mutations.go`
-3. Add message type in `internal/app/messages.go`
-4. Wire a `tea.Cmd` in `internal/app/app.go`
+### Adding a New CLI Command
 
-### New Keybinding
-1. Add to `KeyMap` struct in `keymap.go`
-2. Add to `DefaultKeyMap()` function
-3. Handle in the appropriate view's update function
+CLI commands use the [Cobra](https://github.com/spf13/cobra) framework. All CLI commands are defined in `cmd/lazyliner/main.go`.
+
+**Example: Adding a `lazyliner search <query>` command**
+
+```go
+// 1. Define the command struct
+var searchCmd = &cobra.Command{
+    Use:   "search [query]",
+    Short: "Search for issues by text",
+    Args:  cobra.ExactArgs(1),
+    RunE:  runSearch,
+}
+
+// 2. Add flags (optional)
+var (
+    searchLimit int
+    searchTeam  string
+)
+
+// 3. Initialize flags and register command
+func init() {
+    searchCmd.Flags().IntVarP(&searchLimit, "limit", "n", 10, "Max results")
+    searchCmd.Flags().StringVarP(&searchTeam, "team", "t", "", "Filter by team")
+
+    rootCmd.AddCommand(searchCmd)
+}
+
+// 4. Implement the command handler
+func runSearch(cmd *cobra.Command, args []string) error {
+    if err := requireAPIKey(); err != nil {
+        return err
+    }
+
+    client := linear.NewClient(cfg.Linear.APIKey)
+    ctx := context.Background()
+
+    // Build filter based on flags
+    filter := linear.IssueFilter{
+        Query: args[0],
+        Limit: searchLimit,
+    }
+    if searchTeam != "" {
+        filter.TeamID = searchTeam
+    }
+
+    issues, err := client.GetIssues(ctx, filter)
+    if err != nil {
+        return fmt.Errorf("search failed: %w", err)
+    }
+
+    // Format output (use tabwriter for clean tables)
+    w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+    fmt.Fprintln(w, "ID\tTITLE\tSTATUS")
+    fmt.Fprintln(w, "──\t─────\t──────")
+
+    for _, issue := range issues {
+        status := "Unknown"
+        if issue.State != nil {
+            status = issue.State.Name
+        }
+        fmt.Fprintf(w, "%s\t%s\t%s\n",
+            issue.Identifier,
+            util.Truncate(issue.Title, 50),
+            status,
+        )
+    }
+    w.Flush()
+
+    fmt.Printf("\nFound %d issues\n", len(issues))
+    return nil
+}
+```
+
+**Key patterns:**
+- Use `cobra.ExactArgs(n)` for required positional arguments
+- Use `cobra.MinimumNArgs(n)` or `cobra.MaximumArgs(n)` for flexible args
+- Always call `requireAPIKey()` before API operations
+- Use `fmt.Errorf("...: %w", err)` to wrap errors with context
+- Use `tabwriter.Writer` for clean column-aligned output
+- Return errors (don't call `os.Exit()` directly in `RunE`)
+
+### Adding a New Linear API Method
+
+API methods go in `internal/linear/queries.go` (reads) or `internal/linear/mutations.go` (writes).
+
+#### Adding a Query (Read Operation)
+
+**Example: Adding `GetComments(ctx, issueID)` method**
+
+```go
+// 1. Define types in internal/linear/types.go
+type Comment struct {
+    ID        string    `json:"id"`
+    Body      string    `json:"body"`
+    CreatedAt time.Time `json:"createdAt"`
+    UpdatedAt time.Time `json:"updatedAt"`
+    User      *User     `json:"user,omitempty"`
+}
+
+// 2. Add query method in internal/linear/queries.go
+func (c *Client) GetComments(ctx context.Context, issueID string) ([]Comment, error) {
+    query := `
+        query GetComments($issueId: String!) {
+            issue(id: $issueId) {
+                comments {
+                    nodes {
+                        id
+                        body
+                        createdAt
+                        updatedAt
+                        user {
+                            id
+                            name
+                            displayName
+                            email
+                        }
+                    }
+                }
+            }
+        }
+    `
+
+    variables := map[string]interface{}{
+        "issueId": issueID,
+    }
+
+    var result struct {
+        Issue struct {
+            Comments struct {
+                Nodes []Comment `json:"nodes"`
+            } `json:"comments"`
+        } `json:"issue"`
+    }
+
+    if err := c.execute(ctx, query, variables, &result); err != nil {
+        return nil, fmt.Errorf("failed to get comments: %w", err)
+    }
+
+    return result.Issue.Comments.Nodes, nil
+}
+```
+
+**Key patterns:**
+- Always wrap results: nested structs mirror GraphQL response structure
+- Connection types use `Nodes []T` (Linear's pagination pattern)
+- Use `interface{}` for variables (execute() handles JSON marshaling)
+- Always wrap errors with descriptive context
+- Nullable fields must use pointer types (`*User`, `*State`)
+
+#### Adding a Mutation (Write Operation)
+
+**Example: Adding `AddComment(ctx, issueID, body)` method**
+
+```go
+// 1. Define input type in internal/linear/types.go
+type CommentCreateInput struct {
+    IssueID string `json:"issueId"`
+    Body    string `json:"body"`
+}
+
+// 2. Add mutation method in internal/linear/mutations.go
+func (c *Client) AddComment(ctx context.Context, input CommentCreateInput) (*Comment, error) {
+    mutation := `
+        mutation CreateComment($issueId: String!, $body: String!) {
+            commentCreate(input: {
+                issueId: $issueId
+                body: $body
+            }) {
+                success
+                comment {
+                    id
+                    body
+                    createdAt
+                    user {
+                        id
+                        name
+                        displayName
+                    }
+                }
+            }
+        }
+    `
+
+    variables := map[string]interface{}{
+        "issueId": input.IssueID,
+        "body":    input.Body,
+    }
+
+    var result struct {
+        CommentCreate struct {
+            Success bool     `json:"success"`
+            Comment *Comment `json:"comment"`
+        } `json:"commentCreate"`
+    }
+
+    if err := c.execute(ctx, mutation, variables, &result); err != nil {
+        return nil, fmt.Errorf("failed to create comment: %w", err)
+    }
+
+    if !result.CommentCreate.Success {
+        return nil, fmt.Errorf("comment creation failed")
+    }
+
+    return result.CommentCreate.Comment, nil
+}
+```
+
+**Key patterns:**
+- Mutations return `{ success, <entity> }` structs
+- Always check `success` field before returning
+- Input types use `Input` suffix by convention
+- Mutations use `mutation` keyword (not `query`)
+- Variable names match GraphQL schema conventions (camelCase)
+
+### Adding a New Keybinding
+
+Keybindings are centralized in `internal/app/keymap.go`.
+
+**Example: Adding a "Toggle Archive" keybinding (Ctrl+A)**
+
+```go
+// 1. Add to KeyMap struct in keymap.go
+type KeyMap struct {
+    // ... existing fields ...
+
+    // Archive actions
+    ToggleArchive key.Binding
+}
+
+// 2. Add to DefaultKeyMap() function
+func DefaultKeyMap() KeyMap {
+    return KeyMap{
+        // ... existing bindings ...
+
+        ToggleArchive: key.NewBinding(
+            key.WithKeys("ctrl+a"),
+            key.WithHelp("ctrl+a", "toggle archive"),
+        ),
+    }
+}
+
+// 3. Handle in the appropriate view's Update() function
+// For example, in internal/ui/views/issues/detail/detail.go:
+
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        // Handle the new keybinding
+        if key.Matches(msg, m.keymap.ToggleArchive) {
+            return m, m.toggleArchive()
+        }
+
+        // ... other key handlers ...
+    }
+
+    // ... rest of Update() ...
+}
+
+// 4. Implement the command function
+func (m Model) toggleArchive() tea.Cmd {
+    return func() tea.Msg {
+        ctx := context.Background()
+
+        // Call API mutation
+        err := m.client.ArchiveIssue(ctx, m.issue.ID, !m.issue.Archived)
+        if err != nil {
+            return IssueArchivedMsg{Err: err}
+        }
+
+        return IssueArchivedMsg{Success: true}
+    }
+}
+```
+
+**Key patterns:**
+- Use `key.Matches(msg, binding)` to check if key was pressed
+- Commands return `tea.Msg` (typed message structs)
+- Long-running operations run in goroutines via `tea.Cmd`
+- Multiple keys can map to same binding: `key.WithKeys("q", "ctrl+c")`
+- Help text should be concise (shown in help view)
+
+### Complete Worked Example: Adding "Star Issue" Feature
+
+This example shows the full lifecycle of adding a feature that allows users to star/favorite issues.
+
+#### Step 1: Add API Types
+
+**File: `internal/linear/types.go`**
+
+```go
+// Add field to existing Issue struct
+type Issue struct {
+    ID         string    `json:"id"`
+    // ... existing fields ...
+    Starred    bool      `json:"starred"`     // NEW
+}
+
+// Add input type for mutation
+type IssueStarInput struct {
+    IssueID string `json:"issueId"`
+    Starred bool   `json:"starred"`
+}
+```
+
+#### Step 2: Add API Methods
+
+**File: `internal/linear/queries.go`**
+
+```go
+// Update GetIssue query to include starred field
+func (c *Client) GetIssue(ctx context.Context, idOrIdentifier string) (*Issue, error) {
+    query := `
+        query Issue($id: String!) {
+            issue(id: $id) {
+                id
+                identifier
+                title
+                starred              # ADD THIS LINE
+                # ... other fields ...
+            }
+        }
+    `
+    // ... rest of implementation unchanged ...
+}
+
+// Add method to get starred issues
+func (c *Client) GetStarredIssues(ctx context.Context, limit int) ([]Issue, error) {
+    if limit <= 0 {
+        limit = 50
+    }
+
+    query := `
+        query StarredIssues($limit: Int!) {
+            viewer {
+                starredIssues(first: $limit, orderBy: updatedAt) {
+                    nodes {
+                        id
+                        identifier
+                        title
+                        starred
+                        state { id name color type }
+                        assignee { id name displayName }
+                    }
+                }
+            }
+        }
+    `
+
+    variables := map[string]interface{}{
+        "limit": limit,
+    }
+
+    var result struct {
+        Viewer struct {
+            StarredIssues struct {
+                Nodes []rawIssue `json:"nodes"`
+            } `json:"starredIssues"`
+        } `json:"viewer"`
+    }
+
+    if err := c.execute(ctx, query, variables, &result); err != nil {
+        return nil, fmt.Errorf("failed to fetch starred issues: %w", err)
+    }
+
+    return convertIssues(result.Viewer.StarredIssues.Nodes), nil
+}
+```
+
+**File: `internal/linear/mutations.go`**
+
+```go
+func (c *Client) UpdateIssueStar(ctx context.Context, issueID string, starred bool) error {
+    mutation := `
+        mutation UpdateIssueStar($issueId: String!, $starred: Boolean!) {
+            issueUpdate(id: $issueId, input: { starred: $starred }) {
+                success
+                issue {
+                    id
+                    starred
+                }
+            }
+        }
+    `
+
+    variables := map[string]interface{}{
+        "issueId": issueID,
+        "starred": starred,
+    }
+
+    var result struct {
+        IssueUpdate struct {
+            Success bool `json:"success"`
+        } `json:"issueUpdate"`
+    }
+
+    if err := c.execute(ctx, mutation, variables, &result); err != nil {
+        return fmt.Errorf("failed to update star: %w", err)
+    }
+
+    if !result.IssueUpdate.Success {
+        return fmt.Errorf("star update was not successful")
+    }
+
+    return nil
+}
+```
+
+#### Step 3: Add Message Types
+
+**File: `internal/app/messages.go`**
+
+```go
+// Add new message type for star updates
+type IssueStarredMsg struct {
+    IssueID string
+    Starred bool
+    Err     error
+}
+```
+
+#### Step 4: Add Keybinding
+
+**File: `internal/app/keymap.go`**
+
+```go
+type KeyMap struct {
+    // ... existing fields ...
+    ToggleStar key.Binding
+}
+
+func DefaultKeyMap() KeyMap {
+    return KeyMap {
+        // ... existing bindings ...
+        ToggleStar: key.NewBinding(
+            key.WithKeys("*"),
+            key.WithHelp("*", "toggle star"),
+        ),
+    }
+}
+```
+
+#### Step 5: Wire Up in App Model
+
+**File: `internal/app/app.go`**
+
+```go
+// Add command to load starred issues
+func (m Model) loadStarredIssues() tea.Cmd {
+    return func() tea.Msg {
+        ctx := context.Background()
+        issues, err := m.client.GetStarredIssues(ctx, 50)
+        if err != nil {
+            return IssuesLoadedMsg{Err: err}
+        }
+        return IssuesLoadedMsg{Issues: issues, Tab: TabStarred}
+    }
+}
+
+// Add command to toggle star
+func (m Model) toggleStar(issueID string, currentStar bool) tea.Cmd {
+    return func() tea.Msg {
+        ctx := context.Background()
+        newStarred := !currentStar
+
+        err := m.client.UpdateIssueStar(ctx, issueID, newStarred)
+        if err != nil {
+            return IssueStarredMsg{IssueID: issueID, Err: err}
+        }
+
+        return IssueStarredMsg{
+            IssueID: issueID,
+            Starred: newStarred,
+        }
+    }
+}
+
+// Handle messages in Update()
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+
+    case IssueStarredMsg:
+        if msg.Err != nil {
+            m.err = msg.Err
+            return m, nil
+        }
+
+        // Update local state
+        if m.currentView == ViewDetail && m.currentIssue != nil {
+            if m.currentIssue.ID == msg.IssueID {
+                m.currentIssue.Starred = msg.Starred
+            }
+        }
+
+        // Refresh list if we're showing starred issues
+        if m.currentTab == TabStarred {
+            return m, m.loadStarredIssues()
+        }
+
+        return m, nil
+
+    // ... other message handlers ...
+    }
+
+    // ... rest of Update() ...
+}
+```
+
+#### Step 6: Update Detail View
+
+**File: `internal/ui/views/issues/detail/detail.go`**
+
+```go
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        if key.Matches(msg, m.keymap.ToggleStar) {
+            if m.issue != nil {
+                return m, m.toggleStar()
+            }
+        }
+        // ... other handlers ...
+    }
+    // ... rest of Update() ...
+}
+
+func (m Model) toggleStar() tea.Cmd {
+    return func() tea.Msg {
+        ctx := context.Background()
+        newStarred := !m.issue.Starred
+
+        err := m.client.UpdateIssueStar(ctx, m.issue.ID, newStarred)
+        if err != nil {
+            return IssueStarredMsg{Err: err}
+        }
+
+        return IssueStarredMsg{
+            IssueID: m.issue.ID,
+            Starred: newStarred,
+        }
+    }
+}
+
+func (m Model) View() string {
+    if m.issue == nil {
+        return "Loading..."
+    }
+
+    var b strings.Builder
+
+    // Add star indicator
+    starIcon := " "
+    if m.issue.Starred {
+        starIcon = "★"
+    }
+    b.WriteString(fmt.Sprintf("%s %s: %s\n\n",
+        starIcon,
+        m.issue.Identifier,
+        m.issue.Title,
+    ))
+
+    // ... rest of view rendering ...
+
+    return b.String()
+}
+```
+
+#### Step 7: Add CLI Command (Optional)
+
+**File: `cmd/lazyliner/main.go`**
+
+```go
+var starCmd = &cobra.Command{
+    Use:   "star [issue-id]",
+    Short: "Star or unstar an issue",
+    Args:  cobra.ExactArgs(1),
+    RunE:  runStar,
+}
+
+var unstar bool
+
+func init() {
+    starCmd.Flags().BoolVarP(&unstar, "unstar", "u", false, "Remove star")
+    rootCmd.AddCommand(starCmd)
+}
+
+func runStar(cmd *cobra.Command, args []string) error {
+    if err := requireAPIKey(); err != nil {
+        return err
+    }
+
+    client := linear.NewClient(cfg.Linear.APIKey)
+    ctx := context.Background()
+
+    starred := !unstar
+
+    if err := client.UpdateIssueStar(ctx, args[0], starred); err != nil {
+        return fmt.Errorf("failed to update star: %w", err)
+    }
+
+    action := "starred"
+    if unstar {
+        action = "unstarred"
+    }
+    fmt.Printf("Issue %s %s\n", args[0], action)
+
+    return nil
+}
+```
+
+#### Step 8: Test the Feature
+
+```bash
+# Test API methods
+go test -v ./internal/linear -run TestUpdateIssueStar
+
+# Test the CLI command
+make build
+./bin/lazyliner star LIN-123
+./bin/lazyliner star LIN-123 --unstar
+
+# Test the TUI
+make run
+# Press 'enter' on an issue to view details
+# Press '*' to toggle star
+```
+
+### Summary: Feature Addition Checklist
+
+When adding a new feature, follow this checklist:
+
+- [ ] **Define types** in `internal/linear/types.go`
+- [ ] **Add API methods** in `queries.go` or `mutations.go`
+- [ ] **Add message types** in `internal/app/messages.go`
+- [ ] **Add keybindings** in `internal/app/keymap.go`
+- [ ] **Wire commands** in `internal/app/app.go` Update()
+- [ ] **Update views** in `internal/ui/views/*` to handle new functionality
+- [ ] **Add CLI commands** in `cmd/lazyliner/main.go` (if applicable)
+- [ ] **Write tests** for API methods and business logic
+- [ ] **Update help view** if adding user-visible commands
+- [ ] **Test manually** in both CLI and TUI modes
 
 ## Testing Guide
 
