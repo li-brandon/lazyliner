@@ -116,6 +116,128 @@ if issue.State != nil {
 2. Add to `DefaultKeyMap()` function
 3. Handle in the appropriate view's update function
 
+## Testing Guide
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage report
+make test-coverage  # Generates coverage.out and coverage.html
+
+# Run specific package tests
+go test -v ./internal/linear
+
+# Run specific test function
+go test -v ./internal/linear -run TestGetIssues
+
+# Run tests with race detection
+go test -race ./...
+```
+
+### Test File Naming
+
+Test files follow Go conventions:
+- Test files end with `_test.go` (e.g., `client_test.go`)
+- Place test files in the same package as the code they test
+- Table-driven tests use descriptive struct field names
+
+Example structure:
+```
+internal/linear/
+├── client.go
+├── client_test.go
+├── queries.go
+└── queries_test.go
+```
+
+### Test Structure
+
+Follow this pattern for tests:
+
+```go
+package linear
+
+import (
+    "context"
+    "testing"
+
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+)
+
+// Table-driven test example
+func TestGetIssues(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   IssueFilter
+        want    int
+        wantErr bool
+    }{
+        {
+            name:    "filter by assignee",
+            input:   IssueFilter{AssigneeID: "user-123"},
+            want:    5,
+            wantErr: false,
+        },
+        {
+            name:    "invalid filter",
+            input:   IssueFilter{},
+            want:    0,
+            wantErr: true,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Setup
+            client := NewClient("test-key")
+            ctx := context.Background()
+
+            // Execute
+            got, err := client.GetIssues(ctx, tt.input)
+
+            // Assert
+            if tt.wantErr {
+                require.Error(t, err)
+                return
+            }
+            require.NoError(t, err)
+            assert.Equal(t, tt.want, len(got))
+        })
+    }
+}
+
+// Simple test example
+func TestNewListModel(t *testing.T) {
+    issues := []Issue{{Title: "Test"}}
+    m := NewListModel(issues, 100, 50)
+
+    assert.Equal(t, 1, len(m.issues))
+    assert.Equal(t, 0, m.cursor)
+    assert.Equal(t, 48, m.pageSize) // height - 2
+}
+```
+
+### Coverage Reporting
+
+After running `make test-coverage`:
+1. Open `coverage.html` in your browser to see visual coverage
+2. Check `coverage.out` for raw coverage data
+3. Aim for >80% coverage on business logic (API client, core models)
+4. TUI views may have lower coverage (hard to test without mocks)
+
+### Testing Best Practices
+
+- **Use `require`** for assertions that must pass before continuing
+- **Use `assert`** for non-critical assertions
+- **Mock external dependencies**: Use interfaces for Linear API calls
+- **Test error paths**: Ensure error handling works correctly
+- **Table-driven tests**: Preferred for testing multiple scenarios
+- **Parallel tests**: Use `t.Parallel()` when tests don't share state
+
 ## Environment & Config
 
 | Variable | Description |
