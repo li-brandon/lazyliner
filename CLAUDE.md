@@ -238,6 +238,90 @@ After running `make test-coverage`:
 - **Table-driven tests**: Preferred for testing multiple scenarios
 - **Parallel tests**: Use `t.Parallel()` when tests don't share state
 
+## Release Process
+
+### Semantic Versioning
+
+This project follows [Semantic Versioning](https://semver.org/):
+- **MAJOR** (vX.0.0): Breaking changes
+- **MINOR** (v0.X.0): New features, backward compatible
+- **PATCH** (v0.0.X): Bug fixes, backward compatible
+
+### Creating a Release
+
+1. **Prepare the release**:
+   ```bash
+   # Ensure all tests pass
+   make test
+   make lint
+
+   # Build and verify locally
+   make build
+   ```
+
+2. **Create and push a git tag**:
+   ```bash
+   # Create an annotated tag
+   git tag -a v1.2.3 -m "Release 1.2.3"
+
+   # Push the tag to trigger release workflow
+   git push origin v1.2.3
+   ```
+
+3. **GoReleaser workflow**:
+
+   The release process is automated with GoReleaser (`.goreleaser.yaml`):
+
+   ```bash
+   # Manual release (requires GoReleaser installed)
+   goreleaser release
+
+   # Test release locally without publishing
+   goreleaser release --snapshot --clean
+   ```
+
+   GoReleaser automatically:
+   - Builds binaries for multiple platforms (linux, darwin, windows)
+   - Supports amd64 and arm64 architectures
+   - Embeds version info via ldflags (`-X main.version={{.Version}}`)
+   - Creates archives (`.tar.gz` for Unix, `.zip` for Windows)
+   - Generates checksums (`checksums.txt`)
+   - Creates packages (`.deb`, `.rpm`)
+   - Publishes to GitHub Releases with auto-generated changelog
+
+### Distribution Channels
+
+- **GitHub Releases**: Primary distribution (https://github.com/brandonli/lazyliner/releases)
+  - Binaries for all supported platforms
+  - Checksums for verification
+  - Auto-generated changelog
+
+- **Homebrew**: macOS/Linux package manager
+  ```bash
+  brew tap brandonli/tap
+  brew install lazyliner
+  ```
+  Formula maintained at: https://github.com/brandonli/homebrew-tap
+
+- **Package Managers**:
+  - Debian/Ubuntu: `.deb` packages
+  - RedHat/Fedora: `.rpm` packages
+
+### Manual Multi-Platform Build
+
+For local testing without GoReleaser:
+
+```bash
+make release  # Builds for darwin/linux/windows (amd64 + arm64)
+```
+
+Outputs to `bin/`:
+- `lazyliner-darwin-amd64`
+- `lazyliner-darwin-arm64`
+- `lazyliner-linux-amd64`
+- `lazyliner-linux-arm64`
+- `lazyliner-windows-amd64.exe`
+
 ## Environment & Config
 
 | Variable | Description |
