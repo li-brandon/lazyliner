@@ -224,6 +224,99 @@ All async operations follow this pattern:
 - Messages are type-safe structs defined in `internal/app/messages.go`
 - Views are pure functions of model state (no side effects)
 
+## Design Decisions
+
+This section documents key architectural choices and their rationale.
+
+### Why Bubble Tea Framework
+
+**Decision**: Use [Bubble Tea](https://github.com/charmbracelet/bubbletea) as the TUI framework instead of alternatives like tview or termbox.
+
+**Rationale**:
+- **Elm Architecture**: Bubble Tea implements The Elm Architecture (Model-View-Update pattern), which provides a predictable, unidirectional data flow that makes complex state management easier to reason about
+- **Type Safety**: Strong typing throughout the framework reduces runtime errors and makes refactoring safer
+- **Composability**: Models can be easily composed and nested, allowing us to build complex UIs from simple, reusable components (see `internal/ui/views/` and `internal/ui/components/`)
+- **Testing**: The pure functional approach (no side effects in `View()`, all state changes in `Update()`) makes the application easier to test
+- **Ecosystem**: Integrates seamlessly with other Charm libraries like Lipgloss for styling and Bubbles for pre-built components
+
+**Example**: The `app.Model` orchestrates multiple view models (`listView`, `detailView`, `createView`) and delegates update logic to each, keeping concerns separated.
+
+### Message-Driven Architecture
+
+**Decision**: All async operations and state changes flow through typed messages (defined in `internal/app/messages.go`).
+
+**Rationale**:
+- **Predictability**: Every state change has a clear, traceable path through the `Update()` function. You can always answer "how did we get here?" by looking at message handlers
+- **Non-Blocking UI**: Long-running operations (API calls) execute in goroutines via `tea.Cmd` and return results as messages, preventing UI freezes
+- **Type Safety**: Each message is a strongly-typed struct (e.g., `IssuesLoadedMsg`, `IssueUpdatedMsg`), eliminating string-based event systems and enabling compile-time checks
+- **Debuggability**: Message flow can be logged or inspected at a single chokepoint (`Update()`), making debugging significantly easier
+- **Decoupling**: Views and components don't need to know about each other—they communicate through messages, reducing coupling
+
+**Example**: When a user refreshes issues:
+```go
+// User presses 'r' → Update() returns loadIssues() command
+// loadIssues() calls API in goroutine → Returns IssuesLoadedMsg
+// Update() receives IssuesLoadedMsg → Updates m.issues and m.listView
+// View() renders with new data
+```
+
+This pattern eliminates callback hell and race conditions common in imperative UI frameworks.
+
+### Package Structure Organization
+
+**Decision**: Organize code into focused packages (`app`, `linear`, `ui`, `config`, `git`) with clear boundaries.
+
+**Rationale**:
+- **Single Responsibility**: Each package has one clear purpose:
+  - `internal/app`: Application orchestration and main model
+  - `internal/linear`: Linear API client (queries, mutations, types)
+  - `internal/ui/views`: View-specific models and rendering logic
+  - `internal/ui/components`: Reusable UI components (picker)
+  - `internal/ui/theme`: Centralized styling with Lipgloss
+  - `internal/config`: Configuration management with Viper
+  - `internal/git`: System utilities (clipboard, browser)
+- **Dependency Direction**: Dependencies flow inward (UI → App → Linear), preventing circular dependencies. Views depend on `linear` types but not vice versa
+- **Testability**: Small, focused packages are easier to test in isolation. The `linear` package can be tested without importing UI code
+- **Maintainability**: New features have clear homes. A new view goes in `ui/views/`, a new API method goes in `linear/queries.go` or `linear/mutations.go`
+
+**Example**: The `picker` component in `internal/ui/components` is used by multiple views (status picker, assignee picker, labels picker) without duplication.
+
+### GraphQL Client Approach
+
+**Decision**: Use a custom, lightweight GraphQL client built on `net/http` rather than a generated client or heavy framework.
+
+**Rationale**:
+- **Simplicity**: The `execute()` method in `internal/linear/client.go` is ~60 lines and handles all GraphQL interactions. No code generation or complex tooling required
+- **Flexibility**: Raw GraphQL queries in code are easy to read and modify. No abstraction layer to learn or fight against
+- **Error Handling**: Centralized error handling in `execute()` ensures consistent behavior (auth errors, network errors, GraphQL errors) across all API calls
+- **Type Safety**: While queries are strings, responses are unmarshaled into strongly-typed Go structs in `internal/linear/types.go`, giving us compile-time safety where it matters
+- **Performance**: Only fetch the fields we need. Each query specifies exactly what data to retrieve, minimizing payload size
+- **Maintainability**: When Linear's API changes, updates are localized to `queries.go` or `mutations.go`. No need to regenerate client code
+
+**Example**: Adding a new query is straightforward:
+```go
+func (c *Client) GetLabels(ctx context.Context, teamID string) ([]Label, error) {
+    query := `
+        query GetLabels($teamId: String!) {
+            team(id: $teamId) {
+                labels { nodes { id name color } }
+            }
+        }
+    `
+    var result struct {
+        Team struct {
+            Labels struct { Nodes []Label } `json:"labels"`
+        } `json:"team"`
+    }
+    if err := c.execute(ctx, query, map[string]interface{}{"teamId": teamID}, &result); err != nil {
+        return nil, err
+    }
+    return result.Team.Labels.Nodes, nil
+}
+```
+
+No code generation, no schema files, just plain Go.
+
 ## Code Conventions
 
 ### Import Order
