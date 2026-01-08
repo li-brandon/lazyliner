@@ -55,6 +55,175 @@ GraphQL queries use `Client.execute(ctx, query, vars, &result)` which handles au
 
 **Important**: Labels come as a connection (`Labels.Nodes` in raw results). The `convertIssues()` helper flattens these into `Issue.Labels`.
 
+## Architecture Diagrams
+
+### Component Relationship Diagram
+
+This diagram shows how packages depend on each other:
+
+```mermaid
+graph TD
+    CLI[cmd/lazyliner<br/>CLI Entry Point]
+    App[internal/app<br/>Main Model & Controller]
+    Config[internal/config<br/>Viper Config]
+    Linear[internal/linear<br/>GraphQL Client]
+    Git[internal/git<br/>Clipboard & Browser Utils]
+    UI[internal/ui]
+    Theme[internal/ui/theme<br/>Lipgloss Styles]
+    Components[internal/ui/components<br/>Picker]
+    Views[internal/ui/views<br/>List/Detail/Create/Help]
+    Util[internal/util<br/>String Helpers]
+
+    CLI --> App
+    App --> Config
+    App --> Linear
+    App --> Git
+    App --> Views
+    App --> Components
+    Views --> Theme
+    Views --> Linear
+    Views --> Util
+    Components --> Theme
+    Linear --> Config
+    Git --> Config
+
+    classDef entry fill:#e1f5ff,stroke:#0366d6
+    classDef core fill:#fff5b1,stroke:#ffd33d
+    classDef ui fill:#f1e5ff,stroke:#8a63d2
+    classDef util fill:#d1f5d3,stroke:#28a745
+
+    class CLI entry
+    class App,Linear core
+    class UI,Theme,Components,Views ui
+    class Config,Git,Util util
+```
+
+### Data Flow Diagram
+
+This diagram illustrates the flow from user input through Bubble Tea to the Linear API:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant TUI as Bubble Tea Runtime
+    participant Model as app.Model
+    participant View as ui/views/*
+    participant Client as linear.Client
+    participant API as Linear GraphQL API
+
+    User->>TUI: Key Press (e.g., 'enter' on issue)
+    TUI->>Model: Update(KeyMsg)
+    Model->>Model: Generate tea.Cmd<br/>(e.g., loadIssue)
+
+    Note over Model: Update returns (Model, tea.Cmd)
+
+    Model->>Client: GetIssue(ctx, id)
+    Client->>API: POST GraphQL query
+    API-->>Client: JSON response
+    Client-->>Model: Issue data
+
+    Note over Model: Cmd returns IssueLoadedMsg
+
+    TUI->>Model: Update(IssueLoadedMsg)
+    Model->>Model: Update state<br/>(e.g., currentIssue)
+    Model->>View: Pass updated data
+
+    TUI->>Model: View()
+    Model->>View: Render with data
+    View-->>Model: Rendered string
+    Model-->>TUI: Complete view
+    TUI-->>User: Display updated UI
+```
+
+### View State Machine Diagram
+
+This diagram shows how users navigate between different views:
+
+```mermaid
+stateDiagram-v2
+    [*] --> ViewList: App Start<br/>(loadInitialData)
+
+    ViewList --> ViewDetail: Enter on issue
+    ViewList --> ViewCreate: Press 'c'
+    ViewList --> ViewHelp: Press '?'
+    ViewList --> ViewList: Tab switch<br/>(1,2,3,4)
+    ViewList --> ViewList: Search '/'
+
+    ViewDetail --> ViewList: Press 'esc'
+    ViewDetail --> ViewDetail: Status 's'<br/>Assignee 'a'<br/>Priority 'p'<br/>Labels 'l'
+    ViewDetail --> ViewHelp: Press '?'
+
+    ViewCreate --> ViewList: Press 'esc'<br/>or Create Success
+    ViewCreate --> ViewCreate: Fill form fields
+
+    ViewHelp --> ViewList: Press 'esc' or '?'
+    ViewHelp --> ViewDetail: Press 'esc' or '?'
+
+    note right of ViewList
+        Tabs:
+        • TabMyIssues (1)
+        • TabAllIssues (2)
+        • TabActive (3)
+        • TabBacklog (4)
+    end note
+
+    note right of ViewDetail
+        Actions trigger pickers:
+        • Status picker
+        • Assignee picker
+        • Priority picker
+        • Labels picker
+        • Project picker
+    end note
+```
+
+### Message Flow Pattern
+
+All async operations follow this pattern:
+
+```
+┌─────────────┐
+│ User Action │ (e.g., press 'r' to refresh)
+└──────┬──────┘
+       │
+       v
+┌─────────────────┐
+│  Update(KeyMsg) │ Match key binding
+└──────┬──────────┘
+       │
+       v
+┌──────────────────┐
+│  Return tea.Cmd  │ (e.g., loadIssues)
+└──────┬───────────┘
+       │
+       v
+┌───────────────────┐
+│ Cmd executes      │ Call Linear API
+│ in goroutine      │ (async, non-blocking)
+└──────┬────────────┘
+       │
+       v
+┌────────────────────┐
+│ Return typed Msg   │ (e.g., IssuesLoadedMsg)
+└──────┬─────────────┘
+       │
+       v
+┌────────────────────┐
+│ Update(TypedMsg)   │ Update model state
+└──────┬─────────────┘
+       │
+       v
+┌────────────────────┐
+│ View() renders     │ Display updated UI
+└────────────────────┘
+```
+
+**Key Points:**
+- All state changes go through `Update(msg tea.Msg)`
+- Commands (`tea.Cmd`) run asynchronously and return messages
+- Messages are type-safe structs defined in `internal/app/messages.go`
+- Views are pure functions of model state (no side effects)
+
 ## Code Conventions
 
 ### Import Order
