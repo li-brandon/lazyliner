@@ -190,7 +190,7 @@ func (c *Client) GetProjects(ctx context.Context) ([]Project, error) {
 // GetWorkflowStates returns workflow states for a team
 func (c *Client) GetWorkflowStates(ctx context.Context, teamID string) ([]WorkflowState, error) {
 	query := `
-		query WorkflowStates($teamId: String!) {
+		query WorkflowStates($teamId: ID!) {
 			workflowStates(filter: { team: { id: { eq: $teamId } } }) {
 				nodes {
 					id
@@ -223,7 +223,7 @@ func (c *Client) GetWorkflowStates(ctx context.Context, teamID string) ([]Workfl
 // GetLabels returns all labels for a team
 func (c *Client) GetLabels(ctx context.Context, teamID string) ([]Label, error) {
 	query := `
-		query Labels($teamId: String!) {
+		query Labels($teamId: ID!) {
 			issueLabels(filter: { team: { id: { eq: $teamId } } }) {
 				nodes {
 					id

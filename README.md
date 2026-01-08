@@ -7,6 +7,7 @@ A beautiful, keyboard-driven terminal TUI for [Linear](https://linear.app) built
 - **Issue Browser** - List, filter, and search issues with vim-style navigation
 - **Issue Detail View** - Full issue details with markdown rendering
 - **Issue Creation** - Interactive form to create new issues
+- **Kanban Board** - Visual board view with drag-and-drop style keyboard navigation
 - **Quick Actions** - Change status, assignee, priority, and labels with keyboard shortcuts
 - **Multiple Views** - My Issues, All Issues, Active, and Backlog tabs
 - **Linear-inspired Design** - Beautiful color scheme matching Linear's aesthetic
@@ -111,6 +112,7 @@ lazyliner create
 |-----|--------|
 | `Enter` | View issue detail |
 | `/` | Search/filter issues |
+| `b` | Kanban board view |
 | `c` | Create new issue |
 | `s` | Change status |
 | `a` | Change assignee |
@@ -132,6 +134,21 @@ lazyliner create
 | `a` | Change assignee |
 | `p` | Change priority |
 
+### Kanban Board
+
+| Key | Action |
+|-----|--------|
+| `b` | Switch to board view (from list) |
+| `h` / `←` | Move to left column |
+| `l` / `→` | Move to right column |
+| `j` / `↓` | Move down in column |
+| `k` / `↑` | Move up in column |
+| `H` | Move issue to left column |
+| `L` | Move issue to right column |
+| `m` | Enter move mode (then h/l or 1-9) |
+| `Enter` | View issue detail |
+| `Esc` | Back to list view |
+
 ## Roadmap
 
 ### MVP (Current)
@@ -150,8 +167,8 @@ lazyliner create
 - [x] CLI commands (list, view, create)
 
 ### Phase 3 - Kanban
-- [ ] Kanban board view
-- [ ] Drag-and-drop between columns
+- [x] Kanban board view
+- [x] Move issues between columns (keyboard-based)
 
 ### Phase 4 - Repository Analyzer
 - [ ] TODO/FIXME scanner

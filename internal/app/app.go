@@ -12,6 +12,7 @@ import (
 	"github.com/brandonli/lazyliner/internal/ui/theme"
 	"github.com/brandonli/lazyliner/internal/ui/views/help"
 	"github.com/brandonli/lazyliner/internal/ui/views/issues"
+	"github.com/brandonli/lazyliner/internal/ui/views/kanban"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +27,7 @@ const (
 	ViewDetail
 	ViewCreate
 	ViewHelp
+	ViewKanban
 )
 
 // Tab represents the current tab in list view
@@ -56,19 +58,19 @@ type Model struct {
 	labels   []linear.Label
 
 	// UI state
-	width      int
-	height     int
-	view       View
-	activeTab  Tab
-	loading    bool
-	statusMsg  string
-	statusErr  bool
-	showHelp   bool
+	width     int
+	height    int
+	view      View
+	activeTab Tab
+	loading   bool
+	statusMsg string
+	statusErr bool
+	showHelp  bool
 
 	// Search state
-	searchMode   bool
-	searchInput  textinput.Model
-	searchQuery  string
+	searchMode     bool
+	searchInput    textinput.Model
+	searchQuery    string
 	filteredIssues []linear.Issue
 
 	// Components
@@ -77,6 +79,7 @@ type Model struct {
 	detailView issues.DetailModel
 	createView issues.CreateModel
 	helpView   help.Model
+	kanbanView kanban.Model
 	picker     *components.PickerModel
 
 	// Current data
@@ -226,14 +229,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDetailView(msg)
 		case ViewCreate:
 			return m.updateCreateView(msg)
+		case ViewKanban:
+			return m.updateKanbanView(msg)
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.listView = m.listView.SetSize(msg.Width, msg.Height-4) // Account for header/footer
+		m.listView = m.listView.SetSize(msg.Width, msg.Height-4)
 		m.detailView = m.detailView.SetSize(msg.Width, msg.Height-4)
 		m.createView = m.createView.SetSize(msg.Width, msg.Height-4)
+		m.kanbanView = m.kanbanView.SetSize(msg.Width, msg.Height-4)
 		return m, nil
 
 	case spinner.TickMsg:
@@ -270,21 +276,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case WorkflowStatesLoadedMsg:
-		if msg.Err == nil {
-			m.states = msg.States
+		if msg.Err != nil {
+			m.statusMsg = "Error loading workflow states: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
 		}
+		m.states = msg.States
 		return m, nil
 
 	case LabelsLoadedMsg:
-		if msg.Err == nil {
-			m.labels = msg.Labels
+		if msg.Err != nil {
+			m.statusMsg = "Error loading labels: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
 		}
+		m.labels = msg.Labels
 		return m, nil
 
 	case UsersLoadedMsg:
-		if msg.Err == nil {
-			m.users = msg.Users
+		if msg.Err != nil {
+			m.statusMsg = "Error loading users: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
 		}
+		m.users = msg.Users
 		return m, nil
 
 	case IssueUpdatedMsg:
@@ -337,6 +352,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RefreshMsg:
 		m.loading = true
 		return m, m.loadIssues()
+
+	case kanban.MoveIssueMsg:
+		return m, m.updateIssueState(msg.IssueID, msg.StateID)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -446,6 +464,11 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.openInBrowser(selected.URL)
 		}
+
+	case msg.String() == "b":
+		m.kanbanView = kanban.New(m.issues, m.states, m.width, m.height-4)
+		m.view = ViewKanban
+		return m, nil
 	}
 
 	// Forward to list view
@@ -567,6 +590,46 @@ func (m Model) updateCreateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.view = ViewList
+		return m, nil
+
+	case "enter":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.currentIssue = selected
+			m.detailView = issues.NewDetailModel(selected, m.width, m.height-4)
+			m.view = ViewDetail
+		}
+		return m, nil
+
+	case "c":
+		m.createView = issues.NewCreateModel(m.teams, m.projects, m.states, m.users, m.labels, m.width, m.height-4)
+		m.view = ViewCreate
+		return m, nil
+
+	case "r":
+		m.loading = true
+		m.view = ViewList
+		return m, m.loadIssues()
+
+	case "y":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.copyToClipboard(selected.BranchName, "Branch name copied")
+		}
+
+	case "o":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.openInBrowser(selected.URL)
+		}
+	}
+
+	var cmd tea.Cmd
+	m.kanbanView, cmd = m.kanbanView.Update(msg)
+	return m, cmd
+}
+
 // createIssue creates a new issue
 func (m Model) createIssue(input linear.IssueCreateInput) tea.Cmd {
 	return func() tea.Msg {
@@ -674,6 +737,8 @@ func (m Model) View() string {
 			content = m.detailView.View()
 		case ViewCreate:
 			content = m.createView.View()
+		case ViewKanban:
+			content = m.kanbanView.View()
 		}
 	}
 
@@ -738,12 +803,12 @@ func (m Model) renderListView() string {
 func (m Model) renderSearchBar() string {
 	prefix := theme.TextDimStyle.Render("/ ")
 	input := m.searchInput.View()
-	
+
 	count := ""
 	if m.searchQuery != "" {
 		count = theme.TextDimStyle.Render(fmt.Sprintf(" (%d results)", len(m.filteredIssues)))
 	}
-	
+
 	return theme.SearchBarStyle.Width(m.width).Render(prefix + input + count)
 }
 
@@ -782,19 +847,38 @@ func (m Model) renderStatusBar() string {
 	return theme.StatusBarStyle.Width(m.width).Render(help)
 }
 
-// renderHelp renders the help hints in status bar
 func (m Model) renderHelp() string {
-	keys := []struct {
+	var keys []struct {
 		key  string
 		desc string
-	}{
-		{"j/k", "navigate"},
-		{"enter", "view"},
-		{"/", "search"},
-		{"c", "create"},
-		{"s", "status"},
-		{"?", "help"},
-		{"q", "quit"},
+	}
+
+	switch m.view {
+	case ViewKanban:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"h/l", "columns"},
+			{"j/k", "cards"},
+			{"H/L", "move"},
+			{"enter", "view"},
+			{"esc", "list"},
+			{"?", "help"},
+		}
+	default:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"j/k", "navigate"},
+			{"enter", "view"},
+			{"/", "search"},
+			{"b", "board"},
+			{"c", "create"},
+			{"?", "help"},
+			{"q", "quit"},
+		}
 	}
 
 	var parts []string

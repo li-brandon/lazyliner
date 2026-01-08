@@ -178,7 +178,7 @@ func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) ([]Issue, er
 // GetIssue returns a single issue by ID or identifier
 func (c *Client) GetIssue(ctx context.Context, idOrIdentifier string) (*Issue, error) {
 	query := `
-		query Issue($id: String!) {
+		query Issue($id: ID!) {
 			issue(id: $id) {
 				id
 				identifier

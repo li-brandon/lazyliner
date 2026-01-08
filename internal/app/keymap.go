@@ -27,16 +27,16 @@ type KeyMap struct {
 	Tab4    key.Binding
 
 	// Actions
-	Create   key.Binding
-	Edit     key.Binding
-	Delete   key.Binding
-	Refresh  key.Binding
-	Search   key.Binding
-	Filter   key.Binding
-	Help     key.Binding
-	Quit     key.Binding
-	Back     key.Binding
-	Cancel   key.Binding
+	Create  key.Binding
+	Edit    key.Binding
+	Delete  key.Binding
+	Refresh key.Binding
+	Search  key.Binding
+	Filter  key.Binding
+	Help    key.Binding
+	Quit    key.Binding
+	Back    key.Binding
+	Cancel  key.Binding
 
 	// Issue actions
 	Status   key.Binding
@@ -49,6 +49,9 @@ type KeyMap struct {
 	CopyBranch    key.Binding
 	OpenInBrowser key.Binding
 	Comment       key.Binding
+
+	// Views
+	Board key.Binding
 }
 
 // DefaultKeyMap returns the default keybindings
@@ -200,6 +203,11 @@ func DefaultKeyMap() KeyMap {
 		Comment: key.NewBinding(
 			key.WithKeys("C"),
 			key.WithHelp("C", "comment"),
+		),
+
+		Board: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "kanban board"),
 		),
 	}
 }
