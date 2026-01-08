@@ -224,7 +224,12 @@ func (m Model) renderColumn(col Column, isActive bool) string {
 			Background(theme.SurfaceHover)
 	}
 
-	statusIcon := theme.StatusIcon(col.State.Type)
+	stateType := col.State.Type
+	if stateType == "unstarted" {
+		// Map unstarted to backlog so we use a dedicated status icon
+		stateType = "backlog"
+	}
+	statusIcon := theme.StatusIcon(stateType)
 	header := headerStyle.Render(fmt.Sprintf("%s %s (%d)", statusIcon, col.State.Name, len(col.Issues)))
 
 	cardHeight := 4
