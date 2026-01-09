@@ -56,19 +56,19 @@ type Model struct {
 	labels   []linear.Label
 
 	// UI state
-	width      int
-	height     int
-	view       View
-	activeTab  Tab
-	loading    bool
-	statusMsg  string
-	statusErr  bool
-	showHelp   bool
+	width     int
+	height    int
+	view      View
+	activeTab Tab
+	loading   bool
+	statusMsg string
+	statusErr bool
+	showHelp  bool
 
 	// Search state
-	searchMode   bool
-	searchInput  textinput.Model
-	searchQuery  string
+	searchMode     bool
+	searchInput    textinput.Model
+	searchQuery    string
 	filteredIssues []linear.Issue
 
 	// Components
@@ -738,12 +738,12 @@ func (m Model) renderListView() string {
 func (m Model) renderSearchBar() string {
 	prefix := theme.TextDimStyle.Render("/ ")
 	input := m.searchInput.View()
-	
+
 	count := ""
 	if m.searchQuery != "" {
 		count = theme.TextDimStyle.Render(fmt.Sprintf(" (%d results)", len(m.filteredIssues)))
 	}
-	
+
 	return theme.SearchBarStyle.Width(m.width).Render(prefix + input + count)
 }
 

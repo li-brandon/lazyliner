@@ -2,6 +2,30 @@
 
 Thank you for your interest in contributing to Lazyliner! This guide will help you get started with development and understand our contribution workflow.
 
+## Quick Start (5 minutes)
+
+Get up and running quickly:
+
+```bash
+# 1. Clone and enter the project
+git clone https://github.com/YOUR_USERNAME/lazyliner.git && cd lazyliner
+
+# 2. Set your Linear API key (get one from https://linear.app/settings/api)
+export LAZYLINER_API_KEY=lin_api_xxxxx
+
+# 3. Build and run
+make build && make run
+```
+
+That's it! You should see the TUI. Press `?` for help, `q` to quit.
+
+**Next steps:**
+- Read the [Architecture Overview](./CLAUDE.md#architecture-overview) to understand how the code is organized
+- Check [Adding Features](./CLAUDE.md#adding-features) for step-by-step guides on common tasks
+- See [Code Conventions](./CLAUDE.md#code-conventions) for style guidelines
+
+---
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:
@@ -291,10 +315,19 @@ make build
 
 ## Project Architecture
 
-For detailed architecture information, see [CLAUDE.md](./CLAUDE.md). Key points:
+For detailed architecture information, see [CLAUDE.md](./CLAUDE.md). Key resources:
 
+| Topic | Location |
+|-------|----------|
+| Package structure & dependencies | [Architecture Overview](./CLAUDE.md#architecture-overview) |
+| Component relationship diagram | [Architecture Diagrams](./CLAUDE.md#architecture-diagrams) |
+| Data flow (user input → API → UI) | [Data Flow Diagram](./CLAUDE.md#data-flow-diagram) |
+| View navigation state machine | [View State Machine](./CLAUDE.md#view-state-machine-diagram) |
+| Why Bubble Tea, GraphQL, etc. | [Design Decisions](./CLAUDE.md#design-decisions) |
+
+**Key concepts:**
 - **Bubble Tea**: TUI framework with Model-Update-View pattern
-- **Async operations**: Commands return typed messages
+- **Async operations**: Commands return typed messages (see [Message Flow Pattern](./CLAUDE.md#message-flow-pattern))
 - **Package structure**: Clear separation between app, ui, linear API, and config
 - **Message-driven**: UI updates through message passing
 

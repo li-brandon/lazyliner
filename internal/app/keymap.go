@@ -27,16 +27,16 @@ type KeyMap struct {
 	Tab4    key.Binding
 
 	// Actions
-	Create   key.Binding
-	Edit     key.Binding
-	Delete   key.Binding
-	Refresh  key.Binding
-	Search   key.Binding
-	Filter   key.Binding
-	Help     key.Binding
-	Quit     key.Binding
-	Back     key.Binding
-	Cancel   key.Binding
+	Create  key.Binding
+	Edit    key.Binding
+	Delete  key.Binding
+	Refresh key.Binding
+	Search  key.Binding
+	Filter  key.Binding
+	Help    key.Binding
+	Quit    key.Binding
+	Back    key.Binding
+	Cancel  key.Binding
 
 	// Issue actions
 	Status   key.Binding

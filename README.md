@@ -172,6 +172,26 @@ lazyliner create
 - **CLI**: [Cobra](https://github.com/spf13/cobra)
 - **Config**: [Viper](https://github.com/spf13/viper)
 
+## Contributing
+
+We welcome contributions! See our developer documentation:
+
+| Document | Purpose |
+|----------|---------|
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Quick start, setup, PR process |
+| [CLAUDE.md](./CLAUDE.md) | Architecture, design decisions, code patterns |
+| [AGENTS.md](./AGENTS.md) | Quick reference for AI-assisted development |
+
+**Quick start:**
+
+```bash
+git clone https://github.com/YOUR_USERNAME/lazyliner.git && cd lazyliner
+export LAZYLINER_API_KEY=lin_api_xxxxx
+make build && make run
+```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
+
 ## License
 
 MIT
