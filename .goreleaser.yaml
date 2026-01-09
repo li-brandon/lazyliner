@@ -52,11 +52,16 @@ brews:
     repository:
       owner: brandonli
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: https://github.com/brandonli/lazyliner
     description: A beautiful, keyboard-driven terminal TUI for Linear
     license: MIT
     skip_upload: auto
+    install: |
+      bin.install "lazyliner"
+    test: |
+      system "#{bin}/lazyliner", "--version"
 
 nfpms:
   - id: packages
