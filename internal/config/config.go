@@ -15,6 +15,7 @@ type Config struct {
 	UI       UIConfig       `mapstructure:"ui"`
 	Git      GitConfig      `mapstructure:"git"`
 	AI       AIConfig       `mapstructure:"ai"`
+	Opencode OpencodeConfig `mapstructure:"opencode"`
 }
 
 // LinearConfig holds Linear API configuration
@@ -67,6 +68,12 @@ type AnthropicConfig struct {
 type OllamaConfig struct {
 	Host  string `mapstructure:"host"`
 	Model string `mapstructure:"model"`
+}
+
+// OpencodeConfig holds opencode integration settings
+type OpencodeConfig struct {
+	Terminal string `mapstructure:"terminal"` // auto, ghostty, iterm, terminal, kitty, wezterm, gnome-terminal, tmux
+	Command  string `mapstructure:"command"`  // command to run (e.g., "opencode")
 }
 
 // Load loads configuration from file and environment variables
@@ -139,6 +146,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai.anthropic.model", "claude-3-sonnet-20240229")
 	v.SetDefault("ai.ollama.host", "http://localhost:11434")
 	v.SetDefault("ai.ollama.model", "llama2")
+
+	// Opencode defaults
+	v.SetDefault("opencode.terminal", "auto")
+	v.SetDefault("opencode.command", "opencode")
 }
 
 // ConfigDir returns the configuration directory path
