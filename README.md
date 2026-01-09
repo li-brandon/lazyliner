@@ -17,7 +17,7 @@ A beautiful, keyboard-driven terminal TUI for [Linear](https://linear.app) built
 ### Homebrew (macOS)
 
 ```bash
-brew install brandonli/tap/lazyliner
+brew install li-brandon/tap/lazyliner
 ```
 
 ### From Source

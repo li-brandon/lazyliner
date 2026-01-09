@@ -50,11 +50,11 @@ changelog:
 brews:
   - name: lazyliner
     repository:
-      owner: brandonli
+      owner: li-brandon
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: https://github.com/brandonli/lazyliner
+    homepage: https://github.com/li-brandon/lazyliner
     description: A beautiful, keyboard-driven terminal TUI for Linear
     license: MIT
     skip_upload: auto
@@ -67,7 +67,7 @@ nfpms:
   - id: packages
     package_name: lazyliner
     vendor: Brandon Li
-    homepage: https://github.com/brandonli/lazyliner
+    homepage: https://github.com/li-brandon/lazyliner
     maintainer: Brandon Li
     description: A beautiful, keyboard-driven terminal TUI for Linear
     license: MIT
@@ -77,7 +77,7 @@ nfpms:
 
 release:
   github:
-    owner: brandonli
+    owner: li-brandon
     name: lazyliner
   draft: false
   prerelease: auto
