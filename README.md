@@ -13,6 +13,12 @@ A beautiful, keyboard-driven terminal TUI for [Linear](https://linear.app) built
 
 ## Installation
 
+### Homebrew (macOS)
+
+```bash
+brew install li-brandon/tap/lazyliner
+```
+
 ### From Source
 
 ```bash
@@ -119,6 +125,7 @@ lazyliner create
 | `y` | Copy branch name |
 | `o` | Open in browser |
 | `r` | Refresh |
+| `b` | Kanban board view |
 | `?` | Toggle help |
 | `q` | Quit |
 
@@ -131,6 +138,21 @@ lazyliner create
 | `s` | Change status |
 | `a` | Change assignee |
 | `p` | Change priority |
+
+### Kanban Board
+
+| Key | Action |
+|-----|--------|
+| `b` | Switch to board view (from list) |
+| `h` / `←` | Move to left column |
+| `l` / `→` | Move to right column |
+| `j` / `↓` | Move down in column |
+| `k` / `↑` | Move up in column |
+| `H` | Move issue to left column |
+| `L` | Move issue to right column |
+| `m` | Enter move mode (then h/l or 1-9) |
+| `Enter` | View issue detail |
+| `Esc` | Back to list view |
 
 ## Roadmap
 
@@ -150,8 +172,8 @@ lazyliner create
 - [x] CLI commands (list, view, create)
 
 ### Phase 3 - Kanban
-- [ ] Kanban board view
-- [ ] Drag-and-drop between columns
+- [x] Kanban board view
+- [x] Move issues between columns (keyboard-based)
 
 ### Phase 4 - Repository Analyzer
 - [ ] TODO/FIXME scanner
