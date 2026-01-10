@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "002-developer-documentation",
+  "state": "complete",
+  "subtasks": {
+    "completed": 6,
+    "total": 6,
+    "in_progress": 0,
+    "failed": 0
+  },
+  "phase": {
+    "current": "Create and Enhance Documentation",
+    "id": null,
+    "total": 6
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 6,
+    "started_at": "2026-01-08T00:14:06.982961"
+  },
+  "last_update": "2026-01-08T00:27:38.391325"
+}
