@@ -49,6 +49,10 @@ type KeyMap struct {
 	CopyBranch    key.Binding
 	OpenInBrowser key.Binding
 	Comment       key.Binding
+
+	// Views
+	Board    key.Binding
+	WorkTask key.Binding
 }
 
 // DefaultKeyMap returns the default keybindings
@@ -201,6 +205,15 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("C"),
 			key.WithHelp("C", "comment"),
 		),
+
+		Board: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "kanban board"),
+		),
+		WorkTask: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "work task"),
+		),
 	}
 }
 
@@ -221,7 +234,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Actions
 		{k.Enter, k.Create, k.Edit, k.Delete, k.Refresh, k.Search},
 		// Issue actions
-		{k.Status, k.Assignee, k.Priority, k.Labels, k.CopyBranch, k.OpenInBrowser},
+		{k.Status, k.Assignee, k.Priority, k.Labels, k.CopyBranch, k.OpenInBrowser, k.WorkTask},
 		// General
 		{k.Help, k.Back, k.Quit},
 	}

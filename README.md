@@ -7,6 +7,7 @@ A beautiful, keyboard-driven terminal TUI for [Linear](https://linear.app) built
 - **Issue Browser** - List, filter, and search issues with vim-style navigation
 - **Issue Detail View** - Full issue details with markdown rendering
 - **Issue Creation** - Interactive form to create new issues
+- **Kanban Board** - Visual board view with drag-and-drop style keyboard navigation
 - **Quick Actions** - Change status, assignee, priority, and labels with keyboard shortcuts
 - **Multiple Views** - My Issues, All Issues, Active, and Backlog tabs
 - **Linear-inspired Design** - Beautiful color scheme matching Linear's aesthetic
@@ -117,6 +118,7 @@ lazyliner create
 |-----|--------|
 | `Enter` | View issue detail |
 | `/` | Search/filter issues |
+| `b` | Kanban board view |
 | `c` | Create new issue |
 | `s` | Change status |
 | `a` | Change assignee |

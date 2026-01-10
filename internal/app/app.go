@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/brandonli/lazyliner/internal/config"
@@ -12,6 +13,7 @@ import (
 	"github.com/brandonli/lazyliner/internal/ui/theme"
 	"github.com/brandonli/lazyliner/internal/ui/views/help"
 	"github.com/brandonli/lazyliner/internal/ui/views/issues"
+	"github.com/brandonli/lazyliner/internal/ui/views/kanban"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,19 +28,19 @@ const (
 	ViewDetail
 	ViewCreate
 	ViewHelp
+	ViewKanban
 )
 
 // Tab represents the current tab in list view
 type Tab int
 
 const (
-	TabMyIssues Tab = iota
+	TabProject Tab = iota
+	TabMyIssues
 	TabAllIssues
 	TabActive
 	TabBacklog
 )
-
-var tabNames = []string{"My Issues", "All Issues", "Active", "Backlog"}
 
 // Model is the main application model
 type Model struct {
@@ -77,11 +79,58 @@ type Model struct {
 	detailView issues.DetailModel
 	createView issues.CreateModel
 	helpView   help.Model
+	kanbanView kanban.Model
 	picker     *components.PickerModel
 
 	// Current data
-	issues       []linear.Issue
-	currentIssue *linear.Issue
+	issues         []linear.Issue
+	currentIssue   *linear.Issue
+	currentProject *linear.Project
+}
+
+func (m Model) tabNames() []string {
+	if m.currentProject != nil {
+		return []string{"Project", "My Issues", "All Issues", "Active", "Backlog"}
+	}
+	return []string{"My Issues", "All Issues", "Active", "Backlog"}
+}
+
+func (m Model) tabCount() int {
+	return len(m.tabNames())
+}
+
+func (m Model) tabAtIndex(index int) Tab {
+	if m.currentProject != nil {
+		tabs := []Tab{TabProject, TabMyIssues, TabAllIssues, TabActive, TabBacklog}
+		if index >= 0 && index < len(tabs) {
+			return tabs[index]
+		}
+		return TabProject
+	}
+	tabs := []Tab{TabMyIssues, TabAllIssues, TabActive, TabBacklog}
+	if index >= 0 && index < len(tabs) {
+		return tabs[index]
+	}
+	return TabMyIssues
+}
+
+func (m Model) indexOfTab(tab Tab) int {
+	if m.currentProject != nil {
+		tabs := []Tab{TabProject, TabMyIssues, TabAllIssues, TabActive, TabBacklog}
+		for i, t := range tabs {
+			if t == tab {
+				return i
+			}
+		}
+		return 0
+	}
+	tabs := []Tab{TabMyIssues, TabAllIssues, TabActive, TabBacklog}
+	for i, t := range tabs {
+		if t == tab {
+			return i
+		}
+	}
+	return 0
 }
 
 // New creates a new application model
@@ -135,10 +184,29 @@ func (m Model) loadInitialData() tea.Cmd {
 			return DataLoadedMsg{Err: err}
 		}
 
+		var matchedProject *linear.Project
+		repoName := git.GetRepoName()
+		if repoName != "" {
+			repoNameLower := strings.ToLower(repoName)
+			repoNameNormalized := strings.ReplaceAll(strings.ReplaceAll(repoNameLower, "-", ""), "_", "")
+			for i := range projects {
+				projectNameLower := strings.ToLower(projects[i].Name)
+				projectNameNormalized := strings.ReplaceAll(strings.ReplaceAll(projectNameLower, "-", ""), "_", "")
+				if strings.Contains(projectNameLower, repoNameLower) ||
+					strings.Contains(repoNameLower, projectNameLower) ||
+					strings.Contains(projectNameNormalized, repoNameNormalized) ||
+					strings.Contains(repoNameNormalized, projectNameNormalized) {
+					matchedProject = &projects[i]
+					break
+				}
+			}
+		}
+
 		return DataLoadedMsg{
-			Viewer:   viewer,
-			Teams:    teams,
-			Projects: projects,
+			Viewer:         viewer,
+			Teams:          teams,
+			Projects:       projects,
+			MatchedProject: matchedProject,
 		}
 	}
 }
@@ -147,27 +215,31 @@ func (m Model) loadInitialData() tea.Cmd {
 func (m Model) loadIssues() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		var issues []linear.Issue
+		var loadedIssues []linear.Issue
 		var err error
 
 		switch m.activeTab {
 		case TabMyIssues:
-			issues, err = m.client.GetMyIssues(ctx, 100)
+			loadedIssues, err = m.client.GetMyIssues(ctx, 100)
 		case TabAllIssues:
-			issues, err = m.client.GetIssues(ctx, linear.IssueFilter{Limit: 100})
+			loadedIssues, err = m.client.GetIssues(ctx, linear.IssueFilter{Limit: 100})
 		case TabActive:
-			issues, err = m.client.GetIssues(ctx, linear.IssueFilter{
+			loadedIssues, err = m.client.GetIssues(ctx, linear.IssueFilter{
 				StateType: "started",
 				Limit:     100,
 			})
 		case TabBacklog:
-			issues, err = m.client.GetIssues(ctx, linear.IssueFilter{
+			loadedIssues, err = m.client.GetIssues(ctx, linear.IssueFilter{
 				StateType: "backlog",
 				Limit:     100,
 			})
+		case TabProject:
+			if m.currentProject != nil {
+				loadedIssues, err = m.client.GetProjectIssues(ctx, m.currentProject.ID, 100)
+			}
 		}
 
-		return IssuesLoadedMsg{Issues: issues, Err: err}
+		return IssuesLoadedMsg{Issues: loadedIssues, Err: err}
 	}
 }
 
@@ -226,14 +298,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDetailView(msg)
 		case ViewCreate:
 			return m.updateCreateView(msg)
+		case ViewKanban:
+			return m.updateKanbanView(msg)
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.listView = m.listView.SetSize(msg.Width, msg.Height-4) // Account for header/footer
+		m.listView = m.listView.SetSize(msg.Width, msg.Height-4)
 		m.detailView = m.detailView.SetSize(msg.Width, msg.Height-4)
 		m.createView = m.createView.SetSize(msg.Width, msg.Height-4)
+		m.kanbanView = m.kanbanView.SetSize(msg.Width, msg.Height-4)
 		return m, nil
 
 	case spinner.TickMsg:
@@ -251,6 +326,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewer = msg.Viewer
 		m.teams = msg.Teams
 		m.projects = msg.Projects
+		m.currentProject = msg.MatchedProject
+		if m.currentProject != nil {
+			m.activeTab = TabProject
+		}
 		return m, tea.Batch(
 			m.loadIssues(),
 			m.loadWorkflowStates(),
@@ -270,21 +349,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case WorkflowStatesLoadedMsg:
-		if msg.Err == nil {
-			m.states = msg.States
+		if msg.Err != nil {
+			m.statusMsg = "Error loading workflow states: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
 		}
+		m.states = msg.States
 		return m, nil
 
 	case LabelsLoadedMsg:
-		if msg.Err == nil {
-			m.labels = msg.Labels
+		if msg.Err != nil {
+			m.statusMsg = "Error loading labels: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
 		}
+		m.labels = msg.Labels
 		return m, nil
 
 	case UsersLoadedMsg:
-		if msg.Err == nil {
-			m.users = msg.Users
+		if msg.Err != nil {
+			m.statusMsg = "Error loading users: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
 		}
+		m.users = msg.Users
 		return m, nil
 
 	case IssueUpdatedMsg:
@@ -324,6 +412,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case IssueDeletedMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error deleting issue: " + msg.Err.Error()
+			m.statusErr = true
+		} else {
+			m.statusMsg = "Issue deleted: " + msg.Identifier
+			m.statusErr = false
+			m.view = ViewList
+			m.currentIssue = nil
+			cmds = append(cmds, m.loadIssues())
+		}
+		return m, tea.Batch(cmds...)
+
 	case StatusMsg:
 		m.statusMsg = msg.Message
 		m.statusErr = msg.IsError
@@ -337,6 +438,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RefreshMsg:
 		m.loading = true
 		return m, m.loadIssues()
+
+	case kanban.MoveIssueMsg:
+		return m, m.updateIssueState(msg.IssueID, msg.StateID)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -386,38 +490,65 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.String() == "tab":
-		m.activeTab = Tab((int(m.activeTab) + 1) % len(tabNames))
+		currentIndex := m.indexOfTab(m.activeTab)
+		nextIndex := (currentIndex + 1) % m.tabCount()
+		m.activeTab = m.tabAtIndex(nextIndex)
 		m.loading = true
 		return m, m.loadIssues()
 
 	case msg.String() == "shift+tab":
-		m.activeTab = Tab((int(m.activeTab) - 1 + len(tabNames)) % len(tabNames))
+		currentIndex := m.indexOfTab(m.activeTab)
+		prevIndex := (currentIndex - 1 + m.tabCount()) % m.tabCount()
+		m.activeTab = m.tabAtIndex(prevIndex)
 		m.loading = true
 		return m, m.loadIssues()
 
 	case msg.String() == "1":
-		if m.activeTab != TabMyIssues {
-			m.activeTab = TabMyIssues
+		targetTab := TabMyIssues
+		if m.currentProject != nil {
+			targetTab = TabProject
+		}
+		if m.activeTab != targetTab {
+			m.activeTab = targetTab
 			m.loading = true
 			return m, m.loadIssues()
 		}
 
 	case msg.String() == "2":
-		if m.activeTab != TabAllIssues {
-			m.activeTab = TabAllIssues
+		targetTab := TabAllIssues
+		if m.currentProject != nil {
+			targetTab = TabMyIssues
+		}
+		if m.activeTab != targetTab {
+			m.activeTab = targetTab
 			m.loading = true
 			return m, m.loadIssues()
 		}
 
 	case msg.String() == "3":
-		if m.activeTab != TabActive {
-			m.activeTab = TabActive
+		targetTab := TabActive
+		if m.currentProject != nil {
+			targetTab = TabAllIssues
+		}
+		if m.activeTab != targetTab {
+			m.activeTab = targetTab
 			m.loading = true
 			return m, m.loadIssues()
 		}
 
 	case msg.String() == "4":
-		if m.activeTab != TabBacklog {
+		targetTab := TabBacklog
+		if m.currentProject != nil {
+			targetTab = TabActive
+		}
+		if m.activeTab != targetTab {
+			m.activeTab = targetTab
+			m.loading = true
+			return m, m.loadIssues()
+		}
+
+	case msg.String() == "5":
+		if m.currentProject != nil && m.activeTab != TabBacklog {
 			m.activeTab = TabBacklog
 			m.loading = true
 			return m, m.loadIssues()
@@ -445,6 +576,21 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open in browser
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.openInBrowser(selected.URL)
+		}
+
+	case msg.String() == "b":
+		m.kanbanView = kanban.New(m.issues, m.states, m.width, m.height-4)
+		m.view = ViewKanban
+		return m, nil
+
+	case msg.String() == "w":
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			return m, m.openWorkTask(selected.Identifier)
+		}
+
+	case msg.String() == "d":
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			return m, m.deleteIssue(selected.ID, selected.Identifier)
 		}
 	}
 
@@ -493,6 +639,16 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open in browser
 		if m.currentIssue != nil {
 			return m, m.openInBrowser(m.currentIssue.URL)
+		}
+
+	case msg.String() == "w":
+		if m.currentIssue != nil {
+			return m, m.openWorkTask(m.currentIssue.Identifier)
+		}
+
+	case msg.String() == "d":
+		if m.currentIssue != nil {
+			return m, m.deleteIssue(m.currentIssue.ID, m.currentIssue.Identifier)
 		}
 	}
 
@@ -567,6 +723,56 @@ func (m Model) updateCreateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.view = ViewList
+		return m, nil
+
+	case "enter":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.currentIssue = selected
+			m.detailView = issues.NewDetailModel(selected, m.width, m.height-4)
+			m.view = ViewDetail
+		}
+		return m, nil
+
+	case "c":
+		m.createView = issues.NewCreateModel(m.teams, m.projects, m.states, m.users, m.labels, m.width, m.height-4)
+		m.view = ViewCreate
+		return m, nil
+
+	case "r":
+		m.loading = true
+		m.view = ViewList
+		return m, m.loadIssues()
+
+	case "y":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.copyToClipboard(selected.BranchName, "Branch name copied")
+		}
+
+	case "o":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.openInBrowser(selected.URL)
+		}
+
+	case "w":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.openWorkTask(selected.Identifier)
+		}
+
+	case "d":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.deleteIssue(selected.ID, selected.Identifier)
+		}
+	}
+
+	var cmd tea.Cmd
+	m.kanbanView, cmd = m.kanbanView.Update(msg)
+	return m, cmd
+}
+
 // createIssue creates a new issue
 func (m Model) createIssue(input linear.IssueCreateInput) tea.Cmd {
 	return func() tea.Msg {
@@ -582,6 +788,14 @@ func (m Model) updateIssueState(issueID, stateID string) tea.Cmd {
 		ctx := context.Background()
 		issue, err := m.client.UpdateIssueState(ctx, issueID, stateID)
 		return IssueUpdatedMsg{Issue: issue, Err: err}
+	}
+}
+
+func (m Model) deleteIssue(issueID, identifier string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		err := m.client.DeleteIssue(ctx, issueID)
+		return IssueDeletedMsg{IssueID: issueID, Identifier: identifier, Err: err}
 	}
 }
 
@@ -602,6 +816,26 @@ func (m Model) openInBrowser(url string) tea.Cmd {
 			return StatusMsg{Message: "Failed to open browser: " + err.Error(), IsError: true}
 		}
 		return StatusMsg{Message: "Opened in browser", IsError: false}
+	}
+}
+
+func (m Model) openWorkTask(identifier string) tea.Cmd {
+	return func() tea.Msg {
+		workDir, err := os.Getwd()
+		if err != nil {
+			return StatusMsg{Message: "Failed to get working directory: " + err.Error(), IsError: true}
+		}
+
+		cfg := git.TerminalConfig{
+			Terminal: m.config.Opencode.Terminal,
+			Command:  m.config.Opencode.Command,
+		}
+
+		inputCommand := fmt.Sprintf("/work_task %s", identifier)
+		if err := git.OpenTerminalWithOpencode(workDir, inputCommand, cfg); err != nil {
+			return StatusMsg{Message: "Failed to open terminal: " + err.Error(), IsError: true}
+		}
+		return StatusMsg{Message: "Opened opencode for " + identifier, IsError: false}
 	}
 }
 
@@ -674,6 +908,8 @@ func (m Model) View() string {
 			content = m.detailView.View()
 		case ViewCreate:
 			content = m.createView.View()
+		case ViewKanban:
+			content = m.kanbanView.View()
 		}
 	}
 
@@ -698,10 +934,9 @@ func (m Model) renderHeader() string {
 		userInfo = theme.HeaderInfoStyle.Render(m.viewer.Name)
 	}
 
-	// Render tabs
 	var tabs string
-	for i, name := range tabNames {
-		if Tab(i) == m.activeTab {
+	for i, name := range m.tabNames() {
+		if m.tabAtIndex(i) == m.activeTab {
 			tabs += theme.ActiveTabStyle.Render(name)
 		} else {
 			tabs += theme.TabStyle.Render(name)
@@ -782,19 +1017,42 @@ func (m Model) renderStatusBar() string {
 	return theme.StatusBarStyle.Width(m.width).Render(help)
 }
 
-// renderHelp renders the help hints in status bar
 func (m Model) renderHelp() string {
-	keys := []struct {
+	var keys []struct {
 		key  string
 		desc string
-	}{
-		{"j/k", "navigate"},
-		{"enter", "view"},
-		{"/", "search"},
-		{"c", "create"},
-		{"s", "status"},
-		{"?", "help"},
-		{"q", "quit"},
+	}
+
+	switch m.view {
+	case ViewKanban:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"h/l", "columns"},
+			{"j/k", "cards"},
+			{"H/L", "move"},
+			{"enter", "view"},
+			{"d", "delete"},
+			{"w", "work"},
+			{"esc", "list"},
+			{"?", "help"},
+		}
+	default:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"j/k", "navigate"},
+			{"enter", "view"},
+			{"/", "search"},
+			{"b", "board"},
+			{"c", "create"},
+			{"d", "delete"},
+			{"w", "work"},
+			{"?", "help"},
+			{"q", "quit"},
+		}
 	}
 
 	var parts []string
@@ -820,4 +1078,10 @@ func joinWithSep(parts []string, sep string) []string {
 		}
 	}
 	return result
+}
+
+func splitIntoWords(s string) []string {
+	s = strings.ReplaceAll(s, "-", " ")
+	s = strings.ReplaceAll(s, "_", " ")
+	return strings.Fields(s)
 }

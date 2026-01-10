@@ -1,2 +1,41 @@
-# Auto Claude data directory
+# Binaries
+bin/
+lazyliner
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test files
+*.test
+coverage.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Air (hot reload)
+tmp/
+
+# Claude/AI tooling
 .auto-claude/
+.auto-claude-security.json
+.claude_settings.json
+.claude/
+
+# Environment
+.env
+.env.local

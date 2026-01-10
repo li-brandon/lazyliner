@@ -178,7 +178,7 @@ func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) ([]Issue, er
 // GetIssue returns a single issue by ID or identifier
 func (c *Client) GetIssue(ctx context.Context, idOrIdentifier string) (*Issue, error) {
 	query := `
-		query Issue($id: String!) {
+		query Issue($id: ID!) {
 			issue(id: $id) {
 				id
 				identifier
@@ -338,7 +338,95 @@ func convertIssues(raw []rawIssue) []Issue {
 	return issues
 }
 
-// buildIssueFilter builds a GraphQL filter object
+// GetProjectIssues returns issues for a specific project.
+func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit int) ([]Issue, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `
+		query ProjectIssues($limit: Int!, $filter: IssueFilter) {
+			issues(first: $limit, filter: $filter, orderBy: updatedAt) {
+				nodes {
+					id
+					identifier
+					title
+					description
+					priority
+					estimate
+					createdAt
+					updatedAt
+					startedAt
+					completedAt
+					canceledAt
+					dueDate
+					branchName
+					url
+					state {
+						id
+						name
+						color
+						type
+						position
+					}
+					assignee {
+						id
+						name
+						displayName
+						email
+					}
+					creator {
+						id
+						name
+						displayName
+					}
+					team {
+						id
+						name
+						key
+					}
+					project {
+						id
+						name
+						icon
+						color
+					}
+					labels {
+						nodes {
+							id
+							name
+							color
+						}
+					}
+				}
+			}
+		}
+	`
+
+	filter := map[string]interface{}{
+		"project": map[string]interface{}{
+			"id": map[string]interface{}{"eq": projectID},
+		},
+	}
+
+	variables := map[string]interface{}{
+		"limit":  limit,
+		"filter": filter,
+	}
+
+	var result struct {
+		Issues struct {
+			Nodes []rawIssue `json:"nodes"`
+		} `json:"issues"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, err
+	}
+
+	return convertIssues(result.Issues.Nodes), nil
+}
+
 func buildIssueFilter(filter IssueFilter) map[string]interface{} {
 	f := make(map[string]interface{})
 

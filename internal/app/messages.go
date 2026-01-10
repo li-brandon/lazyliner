@@ -6,10 +6,11 @@ import "github.com/brandonli/lazyliner/internal/linear"
 
 // DataLoadedMsg is sent when initial data is loaded
 type DataLoadedMsg struct {
-	Viewer   *linear.Viewer
-	Teams    []linear.Team
-	Projects []linear.Project
-	Err      error
+	Viewer         *linear.Viewer
+	Teams          []linear.Team
+	Projects       []linear.Project
+	MatchedProject *linear.Project
+	Err            error
 }
 
 // IssuesLoadedMsg is sent when issues are loaded
@@ -34,6 +35,13 @@ type IssueCreatedMsg struct {
 type IssueUpdatedMsg struct {
 	Issue *linear.Issue
 	Err   error
+}
+
+// IssueDeletedMsg is sent when an issue is deleted
+type IssueDeletedMsg struct {
+	IssueID    string
+	Identifier string
+	Err        error
 }
 
 // WorkflowStatesLoadedMsg is sent when workflow states are loaded
