@@ -207,7 +207,7 @@ We welcome contributions! See our developer documentation:
 **Quick start:**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/lazyliner.git && cd lazyliner
+git clone https://github.com/li-brandon/lazyliner.git && cd lazyliner
 export LAZYLINER_API_KEY=lin_api_xxxxx
 make build && make run
 ```
