@@ -189,7 +189,7 @@
     "cargo_aliases": [],
     "shell_scripts": []
   },
-  "project_dir": "/Users/brandonli/dev/projects/linear-tui/.auto-claude/worktrees/tasks/002-developer-documentation",
+  "project_dir": ".",
   "created_at": "2026-01-08T00:14:23.251169",
   "project_hash": "0b5fa7e8bb3939b1e12960b5140d846f"
 }
