@@ -101,7 +101,7 @@ func (m *PickerModel) View() string {
 			icon = item.Icon + " "
 		}
 
-		items += style.Render(cursor + icon + item.Label) + "\n"
+		items += style.Render(cursor+icon+item.Label) + "\n"
 	}
 
 	// Help

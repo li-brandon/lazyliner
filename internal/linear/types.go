@@ -73,15 +73,15 @@ type Project struct {
 
 // Cycle represents a Linear cycle (sprint)
 type Cycle struct {
-	ID        string    `json:"id"`
-	Number    int       `json:"number"`
-	Name      string    `json:"name"`
-	StartsAt  time.Time `json:"startsAt"`
-	EndsAt    time.Time `json:"endsAt"`
-	Progress  float64   `json:"progress"`
-	IsActive  bool      `json:"isActive"`
-	IsFuture  bool      `json:"isFuture"`
-	IsPast    bool      `json:"isPast"`
+	ID       string    `json:"id"`
+	Number   int       `json:"number"`
+	Name     string    `json:"name"`
+	StartsAt time.Time `json:"startsAt"`
+	EndsAt   time.Time `json:"endsAt"`
+	Progress float64   `json:"progress"`
+	IsActive bool      `json:"isActive"`
+	IsFuture bool      `json:"isFuture"`
+	IsPast   bool      `json:"isPast"`
 }
 
 // Label represents an issue label

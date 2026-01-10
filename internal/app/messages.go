@@ -37,6 +37,13 @@ type IssueUpdatedMsg struct {
 	Err   error
 }
 
+// IssueDeletedMsg is sent when an issue is deleted
+type IssueDeletedMsg struct {
+	IssueID    string
+	Identifier string
+	Err        error
+}
+
 // WorkflowStatesLoadedMsg is sent when workflow states are loaded
 type WorkflowStatesLoadedMsg struct {
 	States []linear.WorkflowState

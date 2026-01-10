@@ -412,6 +412,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case IssueDeletedMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error deleting issue: " + msg.Err.Error()
+			m.statusErr = true
+		} else {
+			m.statusMsg = "Issue deleted: " + msg.Identifier
+			m.statusErr = false
+			m.view = ViewList
+			m.currentIssue = nil
+			cmds = append(cmds, m.loadIssues())
+		}
+		return m, tea.Batch(cmds...)
+
 	case StatusMsg:
 		m.statusMsg = msg.Message
 		m.statusErr = msg.IsError
@@ -574,6 +587,11 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.openWorkTask(selected.Identifier)
 		}
+
+	case msg.String() == "d":
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			return m, m.deleteIssue(selected.ID, selected.Identifier)
+		}
 	}
 
 	// Forward to list view
@@ -626,6 +644,11 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "w":
 		if m.currentIssue != nil {
 			return m, m.openWorkTask(m.currentIssue.Identifier)
+		}
+
+	case msg.String() == "d":
+		if m.currentIssue != nil {
+			return m, m.deleteIssue(m.currentIssue.ID, m.currentIssue.Identifier)
 		}
 	}
 
@@ -738,6 +761,11 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected := m.kanbanView.SelectedIssue(); selected != nil {
 			return m, m.openWorkTask(selected.Identifier)
 		}
+
+	case "d":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.deleteIssue(selected.ID, selected.Identifier)
+		}
 	}
 
 	var cmd tea.Cmd
@@ -760,6 +788,14 @@ func (m Model) updateIssueState(issueID, stateID string) tea.Cmd {
 		ctx := context.Background()
 		issue, err := m.client.UpdateIssueState(ctx, issueID, stateID)
 		return IssueUpdatedMsg{Issue: issue, Err: err}
+	}
+}
+
+func (m Model) deleteIssue(issueID, identifier string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		err := m.client.DeleteIssue(ctx, issueID)
+		return IssueDeletedMsg{IssueID: issueID, Identifier: identifier, Err: err}
 	}
 }
 
@@ -997,6 +1033,7 @@ func (m Model) renderHelp() string {
 			{"j/k", "cards"},
 			{"H/L", "move"},
 			{"enter", "view"},
+			{"d", "delete"},
 			{"w", "work"},
 			{"esc", "list"},
 			{"?", "help"},
@@ -1011,6 +1048,7 @@ func (m Model) renderHelp() string {
 			{"/", "search"},
 			{"b", "board"},
 			{"c", "create"},
+			{"d", "delete"},
 			{"w", "work"},
 			{"?", "help"},
 			{"q", "quit"},

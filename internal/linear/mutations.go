@@ -226,15 +226,15 @@ func (c *Client) RemoveIssueLabel(ctx context.Context, issueID string, labelID s
 // DeleteIssue moves an issue to trash
 func (c *Client) DeleteIssue(ctx context.Context, issueID string) error {
 	query := `
-		mutation DeleteIssue($id: ID!) {
-			issueDelete(id: $id) {
+		mutation DeleteIssue($issueId: String!) {
+			issueDelete(id: $issueId) {
 				success
 			}
 		}
 	`
 
 	variables := map[string]interface{}{
-		"id": issueID,
+		"issueId": issueID,
 	}
 
 	var result struct {
