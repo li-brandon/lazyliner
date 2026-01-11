@@ -28,6 +28,7 @@ const (
 	ViewList View = iota
 	ViewDetail
 	ViewCreate
+	ViewEdit
 	ViewHelp
 	ViewKanban
 )
@@ -80,6 +81,7 @@ type Model struct {
 	listView   issues.ListModel
 	detailView issues.DetailModel
 	createView issues.CreateModel
+	editView   issues.EditModel
 	helpView   help.Model
 	kanbanView kanban.Model
 	picker     *components.PickerModel
@@ -311,6 +313,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDetailView(msg)
 		case ViewCreate:
 			return m.updateCreateView(msg)
+		case ViewEdit:
+			return m.updateEditView(msg)
 		case ViewKanban:
 			return m.updateKanbanView(msg)
 		}
@@ -321,6 +325,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.listView = m.listView.SetSize(msg.Width, msg.Height-4)
 		m.detailView = m.detailView.SetSize(msg.Width, msg.Height-4)
 		m.createView = m.createView.SetSize(msg.Width, msg.Height-4)
+		m.editView = m.editView.SetSize(msg.Width, msg.Height-4)
 		m.kanbanView = m.kanbanView.SetSize(msg.Width, msg.Height-4)
 		return m, nil
 
@@ -420,6 +425,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.currentIssue = msg.Issue
 					m.detailView = issues.NewDetailModel(m.currentIssue, m.width, m.height-4)
 				}
+			}
+			if m.view == ViewEdit {
+				m.view = ViewDetail
 			}
 		}
 		return m, nil
@@ -678,6 +686,13 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.currentIssue != nil {
 			return m, m.deleteIssue(m.currentIssue.ID, m.currentIssue.Identifier)
 		}
+
+	case msg.String() == "e":
+		if m.currentIssue != nil {
+			m.editView = issues.NewEditModel(m.currentIssue, m.teams, m.projects, m.states, m.users, m.labels, m.width, m.height-4)
+			m.view = ViewEdit
+		}
+		return m, nil
 	}
 
 	// Forward to detail view
@@ -757,6 +772,23 @@ func (m Model) updateCreateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateEditView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case msg.String() == "esc":
+		m.view = ViewDetail
+		return m, nil
+
+	case msg.String() == "ctrl+s":
+		issueID := m.editView.GetIssueID()
+		input := m.editView.GetUpdateInput()
+		return m, m.updateIssue(issueID, input)
+	}
+
+	var cmd tea.Cmd
+	m.editView, cmd = m.editView.Update(msg)
+	return m, cmd
+}
+
 func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
@@ -813,6 +845,14 @@ func (m Model) createIssue(input linear.IssueCreateInput) tea.Cmd {
 		ctx := context.Background()
 		issue, err := m.client.CreateIssue(ctx, input)
 		return IssueCreatedMsg{Issue: issue, Err: err}
+	}
+}
+
+func (m Model) updateIssue(issueID string, input linear.IssueUpdateInput) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		issue, err := m.client.UpdateIssue(ctx, issueID, input)
+		return IssueUpdatedMsg{Issue: issue, Err: err}
 	}
 }
 
@@ -942,6 +982,8 @@ func (m Model) View() string {
 			content = m.detailView.View()
 		case ViewCreate:
 			content = m.createView.View()
+		case ViewEdit:
+			content = m.editView.View()
 		case ViewKanban:
 			content = m.kanbanView.View()
 		}
@@ -1058,6 +1100,20 @@ func (m Model) renderHelp() string {
 	}
 
 	switch m.view {
+	case ViewDetail:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"e", "edit"},
+			{"s", "status"},
+			{"a", "assignee"},
+			{"p", "priority"},
+			{"y", "copy branch"},
+			{"o", "open"},
+			{"esc", "back"},
+			{"?", "help"},
+		}
 	case ViewKanban:
 		keys = []struct {
 			key  string
