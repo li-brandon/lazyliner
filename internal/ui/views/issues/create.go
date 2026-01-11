@@ -1,6 +1,8 @@
 package issues
 
 import (
+	"strings"
+
 	"github.com/brandonli/lazyliner/internal/linear"
 	"github.com/brandonli/lazyliner/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -29,9 +31,10 @@ type CreateModel struct {
 	selectedAssignee int
 
 	// UI state
-	focusIndex int
-	width      int
-	height     int
+	focusIndex   int
+	scrollOffset int
+	width        int
+	height       int
 }
 
 // Field indices
@@ -139,6 +142,36 @@ func (m *CreateModel) updateFocus() {
 	case fieldDescription:
 		m.descInput.Focus()
 	}
+
+	m.ensureFocusVisible()
+}
+
+func (m *CreateModel) fieldHeights() []int {
+	return []int{4, 9, 2, 2, 2, 2}
+}
+
+func (m *CreateModel) ensureFocusVisible() {
+	heights := m.fieldHeights()
+
+	fieldTop := 3
+	for i := 0; i < m.focusIndex; i++ {
+		fieldTop += heights[i]
+	}
+	fieldBottom := fieldTop + heights[m.focusIndex]
+
+	viewportHeight := m.height - 4
+
+	if fieldTop < m.scrollOffset {
+		m.scrollOffset = fieldTop
+	}
+
+	if fieldBottom > m.scrollOffset+viewportHeight {
+		m.scrollOffset = fieldBottom - viewportHeight
+	}
+
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
 }
 
 // handleLeftRight handles left/right navigation for select fields
@@ -183,13 +216,10 @@ func (m CreateModel) GetInput() linear.IssueCreateInput {
 
 // View renders the create form
 func (m CreateModel) View() string {
-	// Header
 	header := theme.TitleStyle.Render("Create Issue")
 
-	// Form fields
 	var fields []string
 
-	// Title
 	titleLabel := m.fieldLabel("Title", fieldTitle)
 	titleStyle := theme.InputStyle
 	if m.focusIndex == fieldTitle {
@@ -198,7 +228,6 @@ func (m CreateModel) View() string {
 	titleField := titleStyle.Render(m.titleInput.View())
 	fields = append(fields, titleLabel+"\n"+titleField)
 
-	// Description
 	descLabel := m.fieldLabel("Description", fieldDescription)
 	descStyle := theme.InputStyle
 	if m.focusIndex == fieldDescription {
@@ -207,7 +236,6 @@ func (m CreateModel) View() string {
 	descField := descStyle.Render(m.descInput.View())
 	fields = append(fields, descLabel+"\n"+descField)
 
-	// Team
 	teamLabel := m.fieldLabel("Team", fieldTeam)
 	teamValue := "None"
 	if m.selectedTeam >= 0 && m.selectedTeam < len(m.teams) {
@@ -216,7 +244,6 @@ func (m CreateModel) View() string {
 	teamField := m.selectField(teamValue, m.focusIndex == fieldTeam)
 	fields = append(fields, teamLabel+"  "+teamField)
 
-	// Project
 	projectLabel := m.fieldLabel("Project", fieldProject)
 	projectValue := "None"
 	if m.selectedProject >= 0 && m.selectedProject < len(m.projects) {
@@ -225,13 +252,11 @@ func (m CreateModel) View() string {
 	projectField := m.selectField(projectValue, m.focusIndex == fieldProject)
 	fields = append(fields, projectLabel+"  "+projectField)
 
-	// Priority
 	priorityLabel := m.fieldLabel("Priority", fieldPriority)
 	priorityValue := theme.PriorityIcon(m.selectedPriority) + " " + theme.PriorityLabel(m.selectedPriority)
 	priorityField := m.selectField(priorityValue, m.focusIndex == fieldPriority)
 	fields = append(fields, priorityLabel+"  "+priorityField)
 
-	// Assignee
 	assigneeLabel := m.fieldLabel("Assignee", fieldAssignee)
 	assigneeValue := "Unassigned"
 	if m.selectedAssignee >= 0 && m.selectedAssignee < len(m.users) {
@@ -240,11 +265,9 @@ func (m CreateModel) View() string {
 	assigneeField := m.selectField(assigneeValue, m.focusIndex == fieldAssignee)
 	fields = append(fields, assigneeLabel+"  "+assigneeField)
 
-	// Help
 	help := theme.HelpStyle.Render("Tab: next field  ←/→: change selection  Ctrl+S: submit  Esc: cancel")
 
-	// Combine
-	content := lipgloss.JoinVertical(
+	formContent := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		"",
@@ -253,11 +276,53 @@ func (m CreateModel) View() string {
 		help,
 	)
 
+	lines := strings.Split(formContent, "\n")
+	viewportHeight := m.height - 2
+
+	if len(lines) <= viewportHeight || m.scrollOffset == 0 && len(lines) <= viewportHeight {
+		return lipgloss.NewStyle().
+			Padding(1, 2).
+			Width(m.width).
+			Height(m.height).
+			Render(formContent)
+	}
+
+	startLine := m.scrollOffset
+	if startLine > len(lines)-viewportHeight {
+		startLine = len(lines) - viewportHeight
+	}
+	if startLine < 0 {
+		startLine = 0
+	}
+
+	endLine := startLine + viewportHeight
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+
+	visibleContent := strings.Join(lines[startLine:endLine], "\n")
+
+	scrollIndicator := ""
+	if startLine > 0 {
+		scrollIndicator = "▲ "
+	}
+	if endLine < len(lines) {
+		if scrollIndicator != "" {
+			scrollIndicator += "▼"
+		} else {
+			scrollIndicator = "▼"
+		}
+	}
+
+	if scrollIndicator != "" {
+		visibleContent = visibleContent + "\n" + theme.TextMutedStyle.Render(scrollIndicator)
+	}
+
 	return lipgloss.NewStyle().
 		Padding(1, 2).
 		Width(m.width).
 		Height(m.height).
-		Render(content)
+		Render(visibleContent)
 }
 
 // fieldLabel renders a field label
