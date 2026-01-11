@@ -602,6 +602,30 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msg.String() == "a":
+		// Open assignee picker
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case msg.String() == "p":
+		// Open priority picker
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case msg.String() == "l":
+		// Open labels picker
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Manage Labels", m.labelsToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
 	case msg.String() == "y":
 		// Copy branch name
 		if selected := m.listView.SelectedIssue(); selected != nil {
@@ -813,6 +837,38 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = ViewList
 		return m, m.loadIssues()
 
+	case "s":
+		// Open status picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Status", m.statesToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case "a":
+		// Open assignee picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case "p":
+		// Open priority picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case "l":
+		// Open labels picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Manage Labels", m.labelsToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
 	case "y":
 		if selected := m.kanbanView.SelectedIssue(); selected != nil {
 			return m, m.copyToClipboard(selected.BranchName, "Branch name copied")
@@ -953,6 +1009,19 @@ func (m Model) priorityItems() []components.PickerItem {
 		{ID: "3", Label: "Medium", Icon: theme.PriorityIcon(3)},
 		{ID: "4", Label: "Low", Icon: theme.PriorityIcon(4)},
 	}
+}
+
+// labelsToItems converts labels to picker items
+func (m Model) labelsToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.labels))
+	for i, l := range m.labels {
+		items[i] = components.PickerItem{
+			ID:    l.ID,
+			Label: l.Name,
+			Icon:  "🏷️",
+		}
+	}
+	return items
 }
 
 // View renders the application
@@ -1122,11 +1191,22 @@ func (m Model) renderHelp() string {
 			{"h/l", "columns"},
 			{"j/k", "cards"},
 			{"H/L", "move"},
+			{"s", "status"},
+			{"a", "assignee"},
+			{"p", "priority"},
 			{"enter", "view"},
-			{"d", "delete"},
-			{"w", "work"},
 			{"esc", "list"},
 			{"?", "help"},
+		}
+	case ViewCreate, ViewEdit:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"tab", "next field"},
+			{"←/→", "change"},
+			{"ctrl+s", "save"},
+			{"esc", "cancel"},
 		}
 	default:
 		keys = []struct {
@@ -1135,11 +1215,12 @@ func (m Model) renderHelp() string {
 		}{
 			{"j/k", "navigate"},
 			{"enter", "view"},
+			{"s", "status"},
+			{"a", "assignee"},
+			{"p", "priority"},
 			{"/", "search"},
 			{"b", "board"},
 			{"c", "create"},
-			{"d", "delete"},
-			{"w", "work"},
 			{"?", "help"},
 			{"q", "quit"},
 		}
