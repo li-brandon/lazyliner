@@ -228,8 +228,11 @@ func (m EditModel) GetUpdateInput() linear.IssueUpdateInput {
 		input.StateID = &stateID
 	}
 
-	// Project (can be nil to unset)
-	if m.selectedProject >= 0 && m.selectedProject < len(m.projects) {
+	// Project (can be nil to unset). A selectedProject of -1 means "None".
+	if m.selectedProject == -1 {
+		// Explicitly unset the project on the issue.
+		input.ProjectID = nil
+	} else if m.selectedProject >= 0 && m.selectedProject < len(m.projects) {
 		projectID := m.projects[m.selectedProject].ID
 		input.ProjectID = &projectID
 	}
