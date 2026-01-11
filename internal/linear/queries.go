@@ -339,7 +339,8 @@ func convertIssues(raw []rawIssue) []Issue {
 }
 
 // GetProjectIssues returns issues for a specific project.
-func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit int) ([]Issue, error) {
+// By default excludes completed/canceled issues unless includeCompleted is true.
+func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit int, includeCompleted bool) ([]Issue, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -407,6 +408,14 @@ func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit i
 		"project": map[string]interface{}{
 			"id": map[string]interface{}{"eq": projectID},
 		},
+	}
+
+	if !includeCompleted {
+		filter["state"] = map[string]interface{}{
+			"type": map[string]interface{}{
+				"nin": []string{"completed", "canceled"},
+			},
+		}
 	}
 
 	variables := map[string]interface{}{

@@ -124,3 +124,9 @@ type CopyToClipboardMsg struct {
 type OpenInBrowserMsg struct {
 	URL string
 }
+
+// AllProjectIssuesLoadedMsg is sent when all project issues (including completed) are loaded for search
+type AllProjectIssuesLoadedMsg struct {
+	Issues []linear.Issue
+	Err    error
+}

@@ -27,6 +27,7 @@ const (
 	ViewList View = iota
 	ViewDetail
 	ViewCreate
+	ViewEdit
 	ViewHelp
 	ViewKanban
 )
@@ -68,16 +69,18 @@ type Model struct {
 	showHelp  bool
 
 	// Search state
-	searchMode     bool
-	searchInput    textinput.Model
-	searchQuery    string
-	filteredIssues []linear.Issue
+	searchMode       bool
+	searchInput      textinput.Model
+	searchQuery      string
+	filteredIssues   []linear.Issue
+	allProjectIssues []linear.Issue
 
 	// Components
 	spinner    spinner.Model
 	listView   issues.ListModel
 	detailView issues.DetailModel
 	createView issues.CreateModel
+	editView   issues.EditModel
 	helpView   help.Model
 	kanbanView kanban.Model
 	picker     *components.PickerModel
@@ -235,11 +238,22 @@ func (m Model) loadIssues() tea.Cmd {
 			})
 		case TabProject:
 			if m.currentProject != nil {
-				loadedIssues, err = m.client.GetProjectIssues(ctx, m.currentProject.ID, 100)
+				loadedIssues, err = m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, false)
 			}
 		}
 
 		return IssuesLoadedMsg{Issues: loadedIssues, Err: err}
+	}
+}
+
+func (m Model) loadAllProjectIssues() tea.Cmd {
+	if m.currentProject == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx := context.Background()
+		allIssues, err := m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, true)
+		return AllProjectIssuesLoadedMsg{Issues: allIssues, Err: err}
 	}
 }
 
@@ -298,6 +312,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDetailView(msg)
 		case ViewCreate:
 			return m.updateCreateView(msg)
+		case ViewEdit:
+			return m.updateEditView(msg)
 		case ViewKanban:
 			return m.updateKanbanView(msg)
 		}
@@ -308,6 +324,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.listView = m.listView.SetSize(msg.Width, msg.Height-4)
 		m.detailView = m.detailView.SetSize(msg.Width, msg.Height-4)
 		m.createView = m.createView.SetSize(msg.Width, msg.Height-4)
+		m.editView = m.editView.SetSize(msg.Width, msg.Height-4)
 		m.kanbanView = m.kanbanView.SetSize(msg.Width, msg.Height-4)
 		return m, nil
 
@@ -375,6 +392,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.users = msg.Users
 		return m, nil
 
+	case AllProjectIssuesLoadedMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error loading project issues: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
+		}
+		m.allProjectIssues = msg.Issues
+		m.filterIssues()
+		return m, nil
+
 	case IssueUpdatedMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
@@ -395,6 +422,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.currentIssue = msg.Issue
 					m.detailView = issues.NewDetailModel(m.currentIssue, m.width, m.height-4)
 				}
+			}
+			if m.view == ViewEdit {
+				m.view = ViewDetail
 			}
 		}
 		return m, nil
@@ -471,6 +501,10 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "/":
 		m.searchMode = true
 		m.searchInput.Focus()
+		// For Project tab, also load all issues (including completed) for search
+		if m.activeTab == TabProject && m.currentProject != nil {
+			return m, tea.Batch(textinput.Blink, m.loadAllProjectIssues())
+		}
 		return m, textinput.Blink
 
 	case msg.String() == "q":
@@ -650,6 +684,13 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.currentIssue != nil {
 			return m, m.deleteIssue(m.currentIssue.ID, m.currentIssue.Identifier)
 		}
+
+	case msg.String() == "e":
+		if m.currentIssue != nil {
+			m.editView = issues.NewEditModel(m.currentIssue, m.teams, m.projects, m.states, m.users, m.labels, m.width, m.height-4)
+			m.view = ViewEdit
+		}
+		return m, nil
 	}
 
 	// Forward to detail view
@@ -667,12 +708,14 @@ func (m Model) updateSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.SetValue("")
 		m.searchInput.Blur()
 		m.filteredIssues = nil
+		m.allProjectIssues = nil
 		m.listView = issues.NewListModel(m.issues, m.width, m.height-4)
 		return m, nil
 
 	case "enter":
 		m.searchMode = false
 		m.searchInput.Blur()
+		m.allProjectIssues = nil
 		return m, nil
 	}
 
@@ -691,9 +734,14 @@ func (m *Model) filterIssues() {
 		return
 	}
 
+	searchSource := m.issues
+	if m.activeTab == TabProject && len(m.allProjectIssues) > 0 {
+		searchSource = m.allProjectIssues
+	}
+
 	query := strings.ToLower(m.searchQuery)
 	var filtered []linear.Issue
-	for _, issue := range m.issues {
+	for _, issue := range searchSource {
 		if strings.Contains(strings.ToLower(issue.Title), query) ||
 			strings.Contains(strings.ToLower(issue.Identifier), query) ||
 			strings.Contains(strings.ToLower(issue.Description), query) {
@@ -720,6 +768,23 @@ func (m Model) updateCreateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Forward to create view
 	var cmd tea.Cmd
 	m.createView, cmd = m.createView.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateEditView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case msg.String() == "esc":
+		m.view = ViewDetail
+		return m, nil
+
+	case msg.String() == "ctrl+s":
+		issueID := m.editView.GetIssueID()
+		input := m.editView.GetUpdateInput()
+		return m, m.updateIssue(issueID, input)
+	}
+
+	var cmd tea.Cmd
+	m.editView, cmd = m.editView.Update(msg)
 	return m, cmd
 }
 
@@ -779,6 +844,14 @@ func (m Model) createIssue(input linear.IssueCreateInput) tea.Cmd {
 		ctx := context.Background()
 		issue, err := m.client.CreateIssue(ctx, input)
 		return IssueCreatedMsg{Issue: issue, Err: err}
+	}
+}
+
+func (m Model) updateIssue(issueID string, input linear.IssueUpdateInput) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		issue, err := m.client.UpdateIssue(ctx, issueID, input)
+		return IssueUpdatedMsg{Issue: issue, Err: err}
 	}
 }
 
@@ -908,6 +981,8 @@ func (m Model) View() string {
 			content = m.detailView.View()
 		case ViewCreate:
 			content = m.createView.View()
+		case ViewEdit:
+			content = m.editView.View()
 		case ViewKanban:
 			content = m.kanbanView.View()
 		}
@@ -1024,6 +1099,20 @@ func (m Model) renderHelp() string {
 	}
 
 	switch m.view {
+	case ViewDetail:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"e", "edit"},
+			{"s", "status"},
+			{"a", "assignee"},
+			{"p", "priority"},
+			{"y", "copy branch"},
+			{"o", "open"},
+			{"esc", "back"},
+			{"?", "help"},
+		}
 	case ViewKanban:
 		keys = []struct {
 			key  string
