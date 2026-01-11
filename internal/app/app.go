@@ -15,6 +15,7 @@ import (
 	"github.com/brandonli/lazyliner/internal/ui/views/help"
 	"github.com/brandonli/lazyliner/internal/ui/views/issues"
 	"github.com/brandonli/lazyliner/internal/ui/views/kanban"
+	"github.com/brandonli/lazyliner/internal/ui/views/setup"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +32,7 @@ const (
 	ViewEdit
 	ViewHelp
 	ViewKanban
+	ViewSetup
 )
 
 // Tab represents the current tab in list view
@@ -84,6 +86,7 @@ type Model struct {
 	editView   issues.EditModel
 	helpView   help.Model
 	kanbanView kanban.Model
+	setupView  setup.Model
 	picker     *components.PickerModel
 
 	// Current data
@@ -148,20 +151,32 @@ func New(cfg *config.Config) Model {
 	ti.CharLimit = 100
 	ti.Width = 40
 
+	// Determine initial view based on API key configuration
+	initialView := ViewList
+	loading := true
+	if cfg.Linear.APIKey == "" {
+		initialView = ViewSetup
+		loading = false
+	}
+
 	return Model{
 		config:      cfg,
 		keymap:      DefaultKeyMap(),
 		client:      linear.NewClient(cfg.Linear.APIKey),
-		loading:     true,
+		loading:     loading,
 		spinner:     s,
 		activeTab:   TabMyIssues,
-		view:        ViewList,
+		view:        initialView,
 		searchInput: ti,
 	}
 }
 
 // Init initializes the application
 func (m Model) Init() tea.Cmd {
+	// Don't load data if we're in setup view (no API key)
+	if m.view == ViewSetup {
+		return nil
+	}
 	return tea.Batch(
 		m.spinner.Tick,
 		m.loadInitialData(),
@@ -317,6 +332,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEditView(msg)
 		case ViewKanban:
 			return m.updateKanbanView(msg)
+		case ViewSetup:
+			return m.updateSetupView(msg)
 		}
 
 	case tea.WindowSizeMsg:
@@ -327,6 +344,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.createView = m.createView.SetSize(msg.Width, msg.Height-4)
 		m.editView = m.editView.SetSize(msg.Width, msg.Height-4)
 		m.kanbanView = m.kanbanView.SetSize(msg.Width, msg.Height-4)
+		m.setupView = m.setupView.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case spinner.TickMsg:
@@ -839,6 +857,14 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateSetupView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 // createIssue creates a new issue
 func (m Model) createIssue(input linear.IssueCreateInput) tea.Cmd {
 	return func() tea.Msg {
@@ -959,6 +985,12 @@ func (m Model) priorityItems() []components.PickerItem {
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
+	}
+
+	// Show setup view without header/status bar
+	if m.view == ViewSetup {
+		m.setupView = setup.New(m.width, m.height)
+		return m.setupView.View()
 	}
 
 	if m.showHelp {
