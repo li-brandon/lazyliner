@@ -238,7 +238,10 @@ func (m EditModel) GetUpdateInput() linear.IssueUpdateInput {
 	}
 
 	// Assignee (can be nil to unassign)
-	if m.selectedAssignee >= 0 && m.selectedAssignee < len(m.users) {
+	if m.selectedAssignee == -1 {
+		// Explicitly set to nil to unassign in Linear
+		input.AssigneeID = nil
+	} else if m.selectedAssignee >= 0 && m.selectedAssignee < len(m.users) {
 		assigneeID := m.users[m.selectedAssignee].ID
 		input.AssigneeID = &assigneeID
 	}
