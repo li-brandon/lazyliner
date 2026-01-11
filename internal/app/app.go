@@ -1006,6 +1006,19 @@ func (m Model) priorityItems() []components.PickerItem {
 	}
 }
 
+// labelsToItems converts labels to picker items
+func (m Model) labelsToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.labels))
+	for i, l := range m.labels {
+		items[i] = components.PickerItem{
+			ID:    l.ID,
+			Label: l.Name,
+			Icon:  "🏷️",
+		}
+	}
+	return items
+}
+
 // View renders the application
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
