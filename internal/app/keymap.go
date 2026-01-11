@@ -48,6 +48,7 @@ type KeyMap struct {
 	// Utility
 	CopyBranch    key.Binding
 	OpenInBrowser key.Binding
+	OpenInLinear  key.Binding
 	Comment       key.Binding
 
 	// Views
@@ -200,6 +201,10 @@ func DefaultKeyMap() KeyMap {
 		OpenInBrowser: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in browser"),
+		),
+		OpenInLinear: key.NewBinding(
+			key.WithKeys("O"),
+			key.WithHelp("O", "open in Linear"),
 		),
 		Comment: key.NewBinding(
 			key.WithKeys("C"),
