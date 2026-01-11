@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/brandonli/lazyliner/internal/config"
@@ -68,10 +69,11 @@ type Model struct {
 	showHelp  bool
 
 	// Search state
-	searchMode     bool
-	searchInput    textinput.Model
-	searchQuery    string
-	filteredIssues []linear.Issue
+	searchMode       bool
+	searchInput      textinput.Model
+	searchQuery      string
+	filteredIssues   []linear.Issue
+	allProjectIssues []linear.Issue
 
 	// Components
 	spinner    spinner.Model
@@ -235,11 +237,22 @@ func (m Model) loadIssues() tea.Cmd {
 			})
 		case TabProject:
 			if m.currentProject != nil {
-				loadedIssues, err = m.client.GetProjectIssues(ctx, m.currentProject.ID, 100)
+				loadedIssues, err = m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, false)
 			}
 		}
 
 		return IssuesLoadedMsg{Issues: loadedIssues, Err: err}
+	}
+}
+
+func (m Model) loadAllProjectIssues() tea.Cmd {
+	if m.currentProject == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx := context.Background()
+		allIssues, err := m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, true)
+		return AllProjectIssuesLoadedMsg{Issues: allIssues, Err: err}
 	}
 }
 
@@ -344,7 +357,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusErr = true
 			return m, nil
 		}
-		m.issues = msg.Issues
+		m.issues = sortIssues(msg.Issues)
 		m.listView = issues.NewListModel(m.issues, m.width, m.height-4)
 		return m, nil
 
@@ -375,6 +388,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.users = msg.Users
 		return m, nil
 
+	case AllProjectIssuesLoadedMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error loading project issues: " + msg.Err.Error()
+			m.statusErr = true
+			return m, nil
+		}
+		m.allProjectIssues = sortIssues(msg.Issues)
+		m.filterIssues()
+		return m, nil
+
 	case IssueUpdatedMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
@@ -390,6 +413,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 				}
+				// Re-sort issues after update (status/priority may have changed)
+				m.issues = sortIssues(m.issues)
 				m.listView = issues.NewListModel(m.issues, m.width, m.height-4)
 				if m.currentIssue != nil && m.currentIssue.ID == msg.Issue.ID {
 					m.currentIssue = msg.Issue
@@ -471,6 +496,9 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "/":
 		m.searchMode = true
 		m.searchInput.Focus()
+		if m.activeTab == TabProject && m.currentProject != nil {
+			return m, tea.Batch(textinput.Blink, m.loadAllProjectIssues())
+		}
 		return m, textinput.Blink
 
 	case msg.String() == "q":
@@ -658,7 +686,6 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// updateSearchMode handles updates in search mode
 func (m Model) updateSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -667,12 +694,14 @@ func (m Model) updateSearchMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.SetValue("")
 		m.searchInput.Blur()
 		m.filteredIssues = nil
+		m.allProjectIssues = nil
 		m.listView = issues.NewListModel(m.issues, m.width, m.height-4)
 		return m, nil
 
 	case "enter":
 		m.searchMode = false
 		m.searchInput.Blur()
+		m.allProjectIssues = nil
 		return m, nil
 	}
 
@@ -691,17 +720,22 @@ func (m *Model) filterIssues() {
 		return
 	}
 
+	searchSource := m.issues
+	if m.activeTab == TabProject && len(m.allProjectIssues) > 0 {
+		searchSource = m.allProjectIssues
+	}
+
 	query := strings.ToLower(m.searchQuery)
 	var filtered []linear.Issue
-	for _, issue := range m.issues {
+	for _, issue := range searchSource {
 		if strings.Contains(strings.ToLower(issue.Title), query) ||
 			strings.Contains(strings.ToLower(issue.Identifier), query) ||
 			strings.Contains(strings.ToLower(issue.Description), query) {
 			filtered = append(filtered, issue)
 		}
 	}
-	m.filteredIssues = filtered
-	m.listView = issues.NewListModel(filtered, m.width, m.height-4)
+	m.filteredIssues = sortIssues(filtered)
+	m.listView = issues.NewListModel(m.filteredIssues, m.width, m.height-4)
 }
 
 // updateCreateView handles updates in the create view
@@ -1084,4 +1118,76 @@ func splitIntoWords(s string) []string {
 	s = strings.ReplaceAll(s, "-", " ")
 	s = strings.ReplaceAll(s, "_", " ")
 	return strings.Fields(s)
+}
+
+// stateTypePriority returns the sort priority for a workflow state type.
+// Lower values appear first. Incomplete states come before completed ones.
+func stateTypePriority(stateType string) int {
+	switch stateType {
+	case "started":
+		return 0 // In progress - highest priority
+	case "unstarted":
+		return 1 // Not yet started
+	case "backlog":
+		return 2 // Backlog items
+	case "triage":
+		return 3 // Triage items
+	case "completed":
+		return 4 // Done
+	case "canceled":
+		return 5 // Canceled - lowest priority
+	default:
+		return 3 // Unknown states go in the middle
+	}
+}
+
+// sortIssues sorts issues first by completion status (incomplete first),
+// then by priority (urgent first, no priority last).
+func sortIssues(issuesList []linear.Issue) []linear.Issue {
+	sorted := make([]linear.Issue, len(issuesList))
+	copy(sorted, issuesList)
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		issueA := sorted[i]
+		issueB := sorted[j]
+
+		// Get state types, defaulting to "unstarted" if state is nil
+		stateTypeA := "unstarted"
+		stateTypeB := "unstarted"
+		if issueA.State != nil {
+			stateTypeA = issueA.State.Type
+		}
+		if issueB.State != nil {
+			stateTypeB = issueB.State.Type
+		}
+
+		// First sort by state type priority (completion status)
+		statePriorityA := stateTypePriority(stateTypeA)
+		statePriorityB := stateTypePriority(stateTypeB)
+		if statePriorityA != statePriorityB {
+			return statePriorityA < statePriorityB
+		}
+
+		// Then sort by priority (lower number = higher priority)
+		// Priority 0 means "no priority" and should come last within the same state
+		priorityA := issueA.Priority
+		priorityB := issueB.Priority
+
+		// Treat 0 (no priority) as lowest priority (5)
+		if priorityA == 0 {
+			priorityA = 5
+		}
+		if priorityB == 0 {
+			priorityB = 5
+		}
+
+		if priorityA != priorityB {
+			return priorityA < priorityB
+		}
+
+		// Finally, sort by updated time (most recent first) for stability
+		return issueA.UpdatedAt.After(issueB.UpdatedAt)
+	})
+
+	return sorted
 }
