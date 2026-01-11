@@ -64,6 +64,7 @@ func (m Model) View() string {
 				{"s", "Change status"},
 				{"a", "Change assignee"},
 				{"p", "Change priority"},
+				{"d", "Delete issue"},
 				{"y", "Copy branch name"},
 				{"o", "Open in browser"},
 			},
