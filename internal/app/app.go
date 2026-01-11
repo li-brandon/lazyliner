@@ -1174,8 +1174,7 @@ func (m Model) renderHelp() string {
 			{"a", "assignee"},
 			{"p", "priority"},
 			{"y", "copy branch"},
-			{"o", "browser"},
-			{"O", "Linear"},
+			{"o/O", "open"},
 			{"esc", "back"},
 			{"?", "help"},
 		}
