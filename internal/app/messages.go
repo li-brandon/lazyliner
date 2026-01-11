@@ -130,3 +130,8 @@ type AllProjectIssuesLoadedMsg struct {
 	Issues []linear.Issue
 	Err    error
 }
+
+// ProjectSelectedMsg is sent when a project is selected from the picker
+type ProjectSelectedMsg struct {
+	Project *linear.Project // nil means "All Projects"
+}
