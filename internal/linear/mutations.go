@@ -78,7 +78,7 @@ func (c *Client) CreateIssue(ctx context.Context, input IssueCreateInput) (*Issu
 // UpdateIssue updates an existing issue
 func (c *Client) UpdateIssue(ctx context.Context, issueID string, input IssueUpdateInput) (*Issue, error) {
 	query := `
-		mutation UpdateIssue($id: ID!, $input: IssueUpdateInput!) {
+		mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
 			issueUpdate(id: $id, input: $input) {
 				success
 				issue {
