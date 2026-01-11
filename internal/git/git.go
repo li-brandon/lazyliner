@@ -86,7 +86,8 @@ func OpenInBrowser(url string) error {
 // On other platforms, it falls back to opening in the browser.
 func OpenInLinear(url string) error {
 	// Convert https://linear.app/... to linear://...
-	linearURL := strings.Replace(url, "https://linear.app", "linear:", 1)
+	// The Linear app accepts linear:// followed by the path
+	linearURL := strings.Replace(url, "https://linear.app", "linear://linear.app", 1)
 
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
