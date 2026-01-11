@@ -81,6 +81,28 @@ func OpenInBrowser(url string) error {
 	return cmd.Start()
 }
 
+// OpenInLinear opens a Linear issue URL in the Linear desktop app.
+// On macOS, it uses the linear:// URL scheme to open the app directly.
+// On other platforms, it falls back to opening in the browser.
+func OpenInLinear(url string) error {
+	// Convert https://linear.app/... to linear://...
+	linearURL := strings.Replace(url, "https://linear.app", "linear:", 1)
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", linearURL)
+	case "linux":
+		// Try the linear:// scheme first, fall back to browser
+		cmd = exec.Command("xdg-open", linearURL)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", linearURL)
+	default:
+		cmd = exec.Command("xdg-open", linearURL)
+	}
+	return cmd.Start()
+}
+
 type TerminalConfig struct {
 	Terminal string
 	Command  string
