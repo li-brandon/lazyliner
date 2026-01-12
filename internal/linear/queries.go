@@ -471,3 +471,199 @@ func buildIssueFilter(filter IssueFilter) map[string]interface{} {
 
 	return f
 }
+
+// issueFields is the common GraphQL fragment for issue fields
+const issueFields = `
+	id
+	identifier
+	title
+	description
+	priority
+	estimate
+	createdAt
+	updatedAt
+	startedAt
+	completedAt
+	canceledAt
+	dueDate
+	branchName
+	url
+	state {
+		id
+		name
+		color
+		type
+		position
+	}
+	assignee {
+		id
+		name
+		displayName
+		email
+	}
+	creator {
+		id
+		name
+		displayName
+	}
+	team {
+		id
+		name
+		key
+	}
+	project {
+		id
+		name
+		icon
+		color
+	}
+	labels {
+		nodes {
+			id
+			name
+			color
+		}
+	}
+`
+
+// GetMyIssuesWithPagination returns issues assigned to the current user with pagination support
+func (c *Client) GetMyIssuesWithPagination(ctx context.Context, limit int, after string) ([]Issue, PageInfo, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := fmt.Sprintf(`
+		query MyIssues($limit: Int!, $after: String) {
+			viewer {
+				assignedIssues(first: $limit, after: $after, orderBy: updatedAt) {
+					nodes {
+						%s
+					}
+					pageInfo {
+						hasNextPage
+						hasPreviousPage
+						startCursor
+						endCursor
+					}
+				}
+			}
+		}
+	`, issueFields)
+
+	variables := map[string]interface{}{
+		"limit": limit,
+	}
+	if after != "" {
+		variables["after"] = after
+	}
+
+	var result struct {
+		Viewer struct {
+			AssignedIssues rawIssueConnection `json:"assignedIssues"`
+		} `json:"viewer"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	return convertIssues(result.Viewer.AssignedIssues.Nodes), result.Viewer.AssignedIssues.PageInfo, nil
+}
+
+// GetIssuesWithPagination returns issues with optional filters and pagination support
+func (c *Client) GetIssuesWithPagination(ctx context.Context, filter IssueFilter) ([]Issue, PageInfo, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+
+	query := fmt.Sprintf(`
+		query Issues($limit: Int!, $after: String, $filter: IssueFilter) {
+			issues(first: $limit, after: $after, filter: $filter, orderBy: updatedAt) {
+				nodes {
+					%s
+				}
+				pageInfo {
+					hasNextPage
+					hasPreviousPage
+					startCursor
+					endCursor
+				}
+			}
+		}
+	`, issueFields)
+
+	issueFilter := buildIssueFilter(filter)
+	variables := map[string]interface{}{
+		"limit":  filter.Limit,
+		"filter": issueFilter,
+	}
+	if filter.After != "" {
+		variables["after"] = filter.After
+	}
+
+	var result struct {
+		Issues rawIssueConnection `json:"issues"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	return convertIssues(result.Issues.Nodes), result.Issues.PageInfo, nil
+}
+
+// GetProjectIssuesWithPagination returns issues for a specific project with pagination support.
+// By default excludes completed/canceled issues unless includeCompleted is true.
+func (c *Client) GetProjectIssuesWithPagination(ctx context.Context, projectID string, limit int, includeCompleted bool, after string) ([]Issue, PageInfo, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := fmt.Sprintf(`
+		query ProjectIssues($limit: Int!, $after: String, $filter: IssueFilter) {
+			issues(first: $limit, after: $after, filter: $filter, orderBy: updatedAt) {
+				nodes {
+					%s
+				}
+				pageInfo {
+					hasNextPage
+					hasPreviousPage
+					startCursor
+					endCursor
+				}
+			}
+		}
+	`, issueFields)
+
+	filter := map[string]interface{}{
+		"project": map[string]interface{}{
+			"id": map[string]interface{}{"eq": projectID},
+		},
+	}
+
+	if !includeCompleted {
+		filter["state"] = map[string]interface{}{
+			"type": map[string]interface{}{
+				"nin": []string{"completed", "canceled"},
+			},
+		}
+	}
+
+	variables := map[string]interface{}{
+		"limit":  limit,
+		"filter": filter,
+	}
+	if after != "" {
+		variables["after"] = after
+	}
+
+	var result struct {
+		Issues rawIssueConnection `json:"issues"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	return convertIssues(result.Issues.Nodes), result.Issues.PageInfo, nil
+}
