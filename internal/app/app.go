@@ -76,6 +76,10 @@ type Model struct {
 	filteredIssues   []linear.Issue
 	allProjectIssues []linear.Issue
 
+	// Pagination state
+	pageInfo    linear.PageInfo
+	loadingMore bool
+
 	// Components
 	spinner    spinner.Model
 	listView   issues.ListModel
@@ -232,9 +236,18 @@ func (m Model) loadInitialData() tea.Cmd {
 	}
 }
 
-// loadIssues loads issues based on the current tab and applies project filter
 func (m Model) loadIssues() tea.Cmd {
-	// Capture filterProject in closure since it may change
+	return m.loadIssuesWithCursor("")
+}
+
+func (m Model) loadMoreIssues() tea.Cmd {
+	if !m.pageInfo.HasNextPage || m.loadingMore {
+		return nil
+	}
+	return m.loadIssuesWithCursor(m.pageInfo.EndCursor)
+}
+
+func (m Model) loadIssuesWithCursor(cursor string) tea.Cmd {
 	filterProjectID := ""
 	if m.filterProject != nil {
 		filterProjectID = m.filterProject.ID
@@ -243,50 +256,57 @@ func (m Model) loadIssues() tea.Cmd {
 	if m.currentProject != nil {
 		currentProjectID = m.currentProject.ID
 	}
+	isAppend := cursor != ""
 
 	return func() tea.Msg {
 		ctx := context.Background()
-		var loadedIssues []linear.Issue
+		var conn linear.IssueConnection
 		var err error
 
 		switch m.activeTab {
 		case TabMyIssues:
-			loadedIssues, err = m.client.GetMyIssues(ctx, 100)
-			// Apply project filter client-side for MyIssues
+			conn, err = m.client.GetMyIssues(ctx, 50, cursor)
 			if err == nil && filterProjectID != "" {
-				loadedIssues = filterIssuesByProject(loadedIssues, filterProjectID)
+				conn.Nodes = filterIssuesByProject(conn.Nodes, filterProjectID)
 			}
 		case TabAllIssues:
-			filter := linear.IssueFilter{Limit: 100}
+			filter := linear.IssueFilter{Limit: 50, After: cursor}
 			if filterProjectID != "" {
 				filter.ProjectID = filterProjectID
 			}
-			loadedIssues, err = m.client.GetIssues(ctx, filter)
+			conn, err = m.client.GetIssues(ctx, filter)
 		case TabActive:
 			filter := linear.IssueFilter{
 				StateType: "started",
-				Limit:     100,
+				Limit:     50,
+				After:     cursor,
 			}
 			if filterProjectID != "" {
 				filter.ProjectID = filterProjectID
 			}
-			loadedIssues, err = m.client.GetIssues(ctx, filter)
+			conn, err = m.client.GetIssues(ctx, filter)
 		case TabBacklog:
 			filter := linear.IssueFilter{
 				StateType: "backlog",
-				Limit:     100,
+				Limit:     50,
+				After:     cursor,
 			}
 			if filterProjectID != "" {
 				filter.ProjectID = filterProjectID
 			}
-			loadedIssues, err = m.client.GetIssues(ctx, filter)
+			conn, err = m.client.GetIssues(ctx, filter)
 		case TabProject:
 			if currentProjectID != "" {
-				loadedIssues, err = m.client.GetProjectIssues(ctx, currentProjectID, 100, false)
+				conn, err = m.client.GetProjectIssues(ctx, currentProjectID, 50, false, cursor)
 			}
 		}
 
-		return IssuesLoadedMsg{Issues: loadedIssues, Err: err}
+		return IssuesLoadedMsg{
+			Issues:   conn.Nodes,
+			PageInfo: conn.PageInfo,
+			Append:   isAppend,
+			Err:      err,
+		}
 	}
 }
 
@@ -307,8 +327,8 @@ func (m Model) loadAllProjectIssues() tea.Cmd {
 	}
 	return func() tea.Msg {
 		ctx := context.Background()
-		allIssues, err := m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, true)
-		return AllProjectIssuesLoadedMsg{Issues: allIssues, Err: err}
+		conn, err := m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, true, "")
+		return AllProjectIssuesLoadedMsg{Issues: conn.Nodes, Err: err}
 	}
 }
 
@@ -416,13 +436,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case IssuesLoadedMsg:
 		m.loading = false
+		m.loadingMore = false
 		if msg.Err != nil {
 			m.statusMsg = "Error loading issues: " + msg.Err.Error()
 			m.statusErr = true
 			return m, nil
 		}
-		m.issues = sortIssues(msg.Issues)
-		m.listView = issues.NewListModel(m.issues, m.width, m.height-4)
+		m.pageInfo = msg.PageInfo
+		if msg.Append {
+			m.issues = appendUniqueIssues(m.issues, msg.Issues)
+		} else {
+			m.issues = msg.Issues
+		}
+		m.issues = sortIssues(m.issues)
+		m.listView = issues.NewListModelWithPagination(m.issues, m.width, m.height-4, m.pageInfo.HasNextPage)
+		if msg.PageInfo.HasNextPage && !msg.Append {
+			m.statusMsg = fmt.Sprintf("Loaded %d issues (more available, press L)", len(m.issues))
+		} else if msg.Append {
+			m.statusMsg = fmt.Sprintf("Loaded %d total issues", len(m.issues))
+		}
 		return m, nil
 
 	case WorkflowStatesLoadedMsg:
@@ -693,6 +725,13 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "d":
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.deleteIssue(selected.ID, selected.Identifier)
+		}
+
+	case msg.String() == "L":
+		if m.pageInfo.HasNextPage && !m.loadingMore {
+			m.loadingMore = true
+			m.statusMsg = "Loading more issues..."
+			return m, m.loadMoreIssues()
 		}
 	}
 
@@ -1353,6 +1392,21 @@ func splitIntoWords(s string) []string {
 	s = strings.ReplaceAll(s, "-", " ")
 	s = strings.ReplaceAll(s, "_", " ")
 	return strings.Fields(s)
+}
+
+func appendUniqueIssues(existing, newIssues []linear.Issue) []linear.Issue {
+	seen := make(map[string]bool)
+	for _, issue := range existing {
+		seen[issue.ID] = true
+	}
+	result := existing
+	for _, issue := range newIssues {
+		if !seen[issue.ID] {
+			result = append(result, issue)
+			seen[issue.ID] = true
+		}
+	}
+	return result
 }
 
 // stateTypePriority returns the sort priority for a workflow state type.

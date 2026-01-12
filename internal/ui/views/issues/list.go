@@ -14,12 +14,13 @@ import (
 
 // ListModel is the issue list view
 type ListModel struct {
-	issues   []linear.Issue
-	cursor   int
-	offset   int
-	width    int
-	height   int
-	pageSize int
+	issues      []linear.Issue
+	cursor      int
+	offset      int
+	width       int
+	height      int
+	pageSize    int
+	hasNextPage bool
 }
 
 // NewListModel creates a new list model
@@ -29,13 +30,21 @@ func NewListModel(issues []linear.Issue, width, height int) ListModel {
 		pageSize = 10
 	}
 	return ListModel{
-		issues:   issues,
-		cursor:   0,
-		offset:   0,
-		width:    width,
-		height:   height,
-		pageSize: pageSize,
+		issues:      issues,
+		cursor:      0,
+		offset:      0,
+		width:       width,
+		height:      height,
+		pageSize:    pageSize,
+		hasNextPage: false,
 	}
+}
+
+// NewListModelWithPagination creates a new list model with pagination info
+func NewListModelWithPagination(issues []linear.Issue, width, height int, hasNextPage bool) ListModel {
+	m := NewListModel(issues, width, height)
+	m.hasNextPage = hasNextPage
+	return m
 }
 
 // SetSize updates the list dimensions
@@ -140,10 +149,13 @@ func (m ListModel) View() string {
 		rows = append(rows, row)
 	}
 
-	// Scroll indicator
 	scrollInfo := ""
-	if len(m.issues) > m.pageSize {
-		scrollInfo = theme.TextDimStyle.Render(fmt.Sprintf(" %d/%d ", m.cursor+1, len(m.issues)))
+	if len(m.issues) > m.pageSize || m.hasNextPage {
+		suffix := ""
+		if m.hasNextPage {
+			suffix = "+ (L to load more)"
+		}
+		scrollInfo = theme.TextDimStyle.Render(fmt.Sprintf(" %d/%d%s ", m.cursor+1, len(m.issues), suffix))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)

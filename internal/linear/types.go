@@ -151,6 +151,7 @@ type IssueFilter struct {
 	Labels     []string
 	Query      string
 	Limit      int
+	After      string // Cursor for pagination (endCursor from previous page)
 }
 
 // Connection types for pagination
