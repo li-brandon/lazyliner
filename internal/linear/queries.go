@@ -328,6 +328,12 @@ type rawIssue struct {
 	} `json:"labels"`
 }
 
+// rawIssueConnection is the raw issue connection structure from the API
+type rawIssueConnection struct {
+	Nodes    []rawIssue `json:"nodes"`
+	PageInfo PageInfo   `json:"pageInfo"`
+}
+
 // convertIssues converts raw issues to the Issue type
 func convertIssues(raw []rawIssue) []Issue {
 	issues := make([]Issue, len(raw))
