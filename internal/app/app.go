@@ -378,6 +378,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateKanbanView(msg)
 		}
 
+	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			if clickedTab := m.getClickedTab(msg.X, msg.Y); clickedTab >= 0 {
+				newTab := m.tabAtIndex(clickedTab)
+				if newTab != m.activeTab {
+					m.activeTab = newTab
+					m.loading = true
+					return m, m.loadIssues()
+				}
+			}
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -1425,4 +1438,28 @@ func sortIssues(issuesList []linear.Issue) []linear.Issue {
 	})
 
 	return sorted
+}
+
+func (m Model) getClickedTab(x, y int) int {
+	// Tab bar is on Y=1 (second line, 0-indexed)
+	if y != 1 {
+		return -1
+	}
+
+	// Calculate tab positions: HeaderStyle has Padding(0, 1), so tabs start at X=1
+	currentX := 1
+	for i, name := range m.tabNames() {
+		var renderedTab string
+		if m.tabAtIndex(i) == m.activeTab {
+			renderedTab = theme.ActiveTabStyle.Render(name)
+		} else {
+			renderedTab = theme.TabStyle.Render(name)
+		}
+		tabWidth := lipgloss.Width(renderedTab)
+		if x >= currentX && x < currentX+tabWidth {
+			return i
+		}
+		currentX += tabWidth
+	}
+	return -1
 }
