@@ -2,6 +2,7 @@ package issues
 
 import (
 	"github.com/brandonli/lazyliner/internal/linear"
+	"github.com/brandonli/lazyliner/internal/ui/components"
 	"github.com/brandonli/lazyliner/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -36,6 +37,10 @@ type EditModel struct {
 	focusIndex int
 	width      int
 	height     int
+
+	// Picker state
+	picker     *components.PickerModel
+	pickerType string // "state", "project", "priority", "assignee"
 }
 
 // Edit field indices
@@ -147,6 +152,11 @@ func (m EditModel) Update(msg tea.Msg) (EditModel, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle picker if open
+		if m.picker != nil {
+			return m.updatePicker(msg)
+		}
+
 		switch msg.String() {
 		case "tab", "down":
 			m.focusIndex = (m.focusIndex + 1) % editFieldCount
@@ -158,6 +168,9 @@ func (m EditModel) Update(msg tea.Msg) (EditModel, tea.Cmd) {
 			m.handleLeftRight(-1)
 		case "right":
 			m.handleLeftRight(1)
+		case "enter":
+			// Open picker for select fields
+			m.openPickerForField()
 		default:
 			// Forward to focused field
 			switch m.focusIndex {
@@ -174,6 +187,164 @@ func (m EditModel) Update(msg tea.Msg) (EditModel, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// openPickerForField opens the appropriate picker based on the focused field
+func (m *EditModel) openPickerForField() {
+	switch m.focusIndex {
+	case editFieldState:
+		m.picker = components.NewPickerModel("Select Status", m.statesToItems(), m.width, m.height)
+		m.pickerType = "state"
+	case editFieldPriority:
+		m.picker = components.NewPickerModel("Select Priority", m.priorityItems(), m.width, m.height)
+		m.pickerType = "priority"
+	case editFieldAssignee:
+		m.picker = components.NewPickerModel("Select Assignee", m.usersToItems(), m.width, m.height)
+		m.pickerType = "assignee"
+	case editFieldProject:
+		m.picker = components.NewPickerModel("Select Project", m.projectsToItems(), m.width, m.height)
+		m.pickerType = "project"
+	}
+}
+
+// updatePicker handles picker interactions
+func (m EditModel) updatePicker(msg tea.KeyMsg) (EditModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.picker = nil
+		m.pickerType = ""
+		return m, nil
+
+	case "enter":
+		if m.picker != nil {
+			selected := m.picker.SelectedItem()
+			if selected != nil {
+				m.handlePickerSelection(selected)
+			}
+		}
+		m.picker = nil
+		m.pickerType = ""
+		return m, nil
+	}
+
+	// Forward to picker
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+	return m, cmd
+}
+
+// handlePickerSelection handles the selection from a picker
+func (m *EditModel) handlePickerSelection(item *components.PickerItem) {
+	switch m.pickerType {
+	case "state":
+		for i, state := range m.states {
+			if state.ID == item.ID {
+				m.selectedState = i
+				break
+			}
+		}
+	case "project":
+		if item.ID == "" {
+			m.selectedProject = -1
+		} else {
+			for i, project := range m.projects {
+				if project.ID == item.ID {
+					m.selectedProject = i
+					break
+				}
+			}
+		}
+	case "priority":
+		var priority int
+		switch item.ID {
+		case "0":
+			priority = 0
+		case "1":
+			priority = 1
+		case "2":
+			priority = 2
+		case "3":
+			priority = 3
+		case "4":
+			priority = 4
+		}
+		m.selectedPriority = priority
+	case "assignee":
+		if item.ID == "" {
+			m.selectedAssignee = -1
+		} else {
+			for i, user := range m.users {
+				if user.ID == item.ID {
+					m.selectedAssignee = i
+					break
+				}
+			}
+		}
+	}
+}
+
+// statesToItems converts workflow states to picker items
+func (m EditModel) statesToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.states))
+	for i, s := range m.states {
+		items[i] = components.PickerItem{
+			ID:    s.ID,
+			Label: s.Name,
+			Icon:  theme.StatusIcon(s.Type),
+		}
+	}
+	return items
+}
+
+// projectsToItems converts projects to picker items
+func (m EditModel) projectsToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.projects)+1)
+	items[0] = components.PickerItem{
+		ID:    "",
+		Label: "None",
+		Icon:  "📁",
+	}
+	for i, p := range m.projects {
+		icon := "📁"
+		if p.Icon != "" {
+			icon = p.Icon
+		}
+		items[i+1] = components.PickerItem{
+			ID:    p.ID,
+			Label: p.Name,
+			Icon:  icon,
+		}
+	}
+	return items
+}
+
+// priorityItems returns priority picker items
+func (m EditModel) priorityItems() []components.PickerItem {
+	return []components.PickerItem{
+		{ID: "0", Label: "No Priority", Icon: theme.PriorityIcon(0)},
+		{ID: "1", Label: "Urgent", Icon: theme.PriorityIcon(1)},
+		{ID: "2", Label: "High", Icon: theme.PriorityIcon(2)},
+		{ID: "3", Label: "Medium", Icon: theme.PriorityIcon(3)},
+		{ID: "4", Label: "Low", Icon: theme.PriorityIcon(4)},
+	}
+}
+
+// usersToItems converts users to picker items
+func (m EditModel) usersToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.users)+1)
+	items[0] = components.PickerItem{
+		ID:    "",
+		Label: "Unassigned",
+		Icon:  "👤",
+	}
+	for i, u := range m.users {
+		items[i+1] = components.PickerItem{
+			ID:    u.ID,
+			Label: u.Name,
+			Icon:  "👤",
+		}
+	}
+	return items
 }
 
 // updateFocus updates which field is focused
@@ -251,6 +422,11 @@ func (m EditModel) GetUpdateInput() linear.IssueUpdateInput {
 
 // View renders the edit form
 func (m EditModel) View() string {
+	// If picker is open, render it instead
+	if m.picker != nil {
+		return m.picker.View()
+	}
+
 	// Header
 	headerText := "Edit Issue"
 	if m.issue != nil {
@@ -313,7 +489,7 @@ func (m EditModel) View() string {
 	fields = append(fields, projectLabel+"  "+projectField)
 
 	// Help
-	help := theme.HelpStyle.Render("Tab: next field  ←/→: change selection  Ctrl+S: save  Esc: cancel")
+	help := theme.HelpStyle.Render("Tab: next  Enter: select  ←/→: quick change  Ctrl+S: save  Esc: cancel")
 
 	// Combine
 	content := lipgloss.JoinVertical(
