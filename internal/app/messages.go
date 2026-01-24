@@ -15,8 +15,10 @@ type DataLoadedMsg struct {
 
 // IssuesLoadedMsg is sent when issues are loaded
 type IssuesLoadedMsg struct {
-	Issues []linear.Issue
-	Err    error
+	Issues   []linear.Issue
+	PageInfo linear.PageInfo
+	Append   bool
+	Err      error
 }
 
 // IssueLoadedMsg is sent when a single issue is loaded

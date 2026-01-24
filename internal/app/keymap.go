@@ -53,6 +53,9 @@ type KeyMap struct {
 	// Views
 	Board    key.Binding
 	WorkTask key.Binding
+
+	// Pagination
+	LoadMore key.Binding
 }
 
 // DefaultKeyMap returns the default keybindings
@@ -213,6 +216,11 @@ func DefaultKeyMap() KeyMap {
 		WorkTask: key.NewBinding(
 			key.WithKeys("w"),
 			key.WithHelp("w", "work task"),
+		),
+
+		LoadMore: key.NewBinding(
+			key.WithKeys("L"),
+			key.WithHelp("L", "load more"),
 		),
 	}
 }
