@@ -164,3 +164,25 @@ func ConfigDir() string {
 func EnsureConfigDir() error {
 	return os.MkdirAll(ConfigDir(), 0755)
 }
+
+// SaveProjectFilter saves the selected project filter to config file
+func SaveProjectFilter(projectID string) error {
+	if err := EnsureConfigDir(); err != nil {
+		return err
+	}
+
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(ConfigDir())
+
+	// Try to read existing config
+	_ = v.ReadInConfig()
+
+	// Update the project setting
+	v.Set("defaults.project", projectID)
+
+	// Write the config
+	configPath := filepath.Join(ConfigDir(), "config.yaml")
+	return v.WriteConfigAs(configPath)
+}
