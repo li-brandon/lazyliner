@@ -87,10 +87,7 @@ func requireAPIKey() error {
 }
 
 func runTUI(cmd *cobra.Command, args []string) error {
-	if err := requireAPIKey(); err != nil {
-		return err
-	}
-
+	// Don't require API key - the TUI will show setup instructions if not configured
 	p := tea.NewProgram(
 		app.New(cfg),
 		tea.WithAltScreen(),
