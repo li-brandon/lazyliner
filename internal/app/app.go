@@ -436,7 +436,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.createView = m.createView.SetSize(msg.Width, msg.Height-4)
 		m.editView = m.editView.SetSize(msg.Width, msg.Height-4)
 		m.kanbanView = m.kanbanView.SetSize(msg.Width, msg.Height-4)
-		m.setupView = m.setupView.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case spinner.TickMsg:
