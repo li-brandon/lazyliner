@@ -902,6 +902,13 @@ func (m Model) updateCreateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Submit the form
 		input := m.createView.GetInput()
 		return m, m.createIssue(input)
+
+	case msg.String() == "enter":
+		// Submit the form when on a select field (Team, Project, Priority, Assignee)
+		if m.createView.IsOnSelectField() {
+			input := m.createView.GetInput()
+			return m, m.createIssue(input)
+		}
 	}
 
 	// Forward to create view

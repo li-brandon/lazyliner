@@ -359,6 +359,11 @@ func (m *CreateModel) handleLeftRight(dir int) {
 	}
 }
 
+// IsOnSelectField returns true if the current focus is on a select field (not text input)
+func (m CreateModel) IsOnSelectField() bool {
+	return m.focusIndex >= fieldTeam && m.focusIndex <= fieldAssignee
+}
+
 // GetInput returns the current form input as IssueCreateInput
 func (m CreateModel) GetInput() linear.IssueCreateInput {
 	input := linear.IssueCreateInput{
@@ -441,7 +446,7 @@ func (m CreateModel) View() string {
 	assigneeField := m.selectField(assigneeValue, m.focusIndex == fieldAssignee)
 	fields = append(fields, assigneeLabel+"  "+assigneeField)
 
-	help := theme.HelpStyle.Render("Tab: next  Enter: select  ←/→: quick change  Ctrl+S: submit  Esc: cancel")
+	help := theme.HelpStyle.Render("Tab: next field  ←/→: change selection  Enter/Ctrl+S: submit  Esc: cancel")
 
 	formContent := lipgloss.JoinVertical(
 		lipgloss.Left,
