@@ -46,13 +46,16 @@ type KeyMap struct {
 	Project  key.Binding
 
 	// Utility
-	CopyBranch    key.Binding
-	OpenInBrowser key.Binding
-	Comment       key.Binding
+	CopyBranch   key.Binding
+	OpenInLinear key.Binding
+	Comment      key.Binding
 
 	// Views
 	Board    key.Binding
 	WorkTask key.Binding
+
+	// Pagination
+	LoadMore key.Binding
 }
 
 // DefaultKeyMap returns the default keybindings
@@ -197,9 +200,9 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("y"),
 			key.WithHelp("y", "copy branch"),
 		),
-		OpenInBrowser: key.NewBinding(
+		OpenInLinear: key.NewBinding(
 			key.WithKeys("o"),
-			key.WithHelp("o", "open in browser"),
+			key.WithHelp("o", "open in linear"),
 		),
 		Comment: key.NewBinding(
 			key.WithKeys("C"),
@@ -213,6 +216,11 @@ func DefaultKeyMap() KeyMap {
 		WorkTask: key.NewBinding(
 			key.WithKeys("w"),
 			key.WithHelp("w", "work task"),
+		),
+
+		LoadMore: key.NewBinding(
+			key.WithKeys("L"),
+			key.WithHelp("L", "load more"),
 		),
 	}
 }
@@ -234,7 +242,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Actions
 		{k.Enter, k.Create, k.Edit, k.Delete, k.Refresh, k.Search},
 		// Issue actions
-		{k.Status, k.Assignee, k.Priority, k.Labels, k.CopyBranch, k.OpenInBrowser, k.WorkTask},
+		{k.Status, k.Assignee, k.Priority, k.Project, k.Labels, k.CopyBranch, k.OpenInLinear, k.WorkTask},
 		// General
 		{k.Help, k.Back, k.Quit},
 	}

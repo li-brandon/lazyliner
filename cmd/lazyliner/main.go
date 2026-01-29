@@ -87,10 +87,7 @@ func requireAPIKey() error {
 }
 
 func runTUI(cmd *cobra.Command, args []string) error {
-	if err := requireAPIKey(); err != nil {
-		return err
-	}
-
+	// Don't require API key - the TUI will show setup instructions if not configured
 	p := tea.NewProgram(
 		app.New(cfg),
 		tea.WithAltScreen(),
@@ -111,14 +108,15 @@ func runList(cmd *cobra.Command, args []string) error {
 	client := linear.NewClient(cfg.Linear.APIKey)
 	ctx := context.Background()
 
-	var issues []linear.Issue
+	var conn linear.IssueConnection
 	var err error
 
 	if listMine {
-		issues, err = client.GetMyIssues(ctx, listLimit)
+		conn, err = client.GetMyIssues(ctx, listLimit, "")
 	} else {
-		issues, err = client.GetIssues(ctx, linear.IssueFilter{Limit: listLimit})
+		conn, err = client.GetIssues(ctx, linear.IssueFilter{Limit: listLimit})
 	}
+	issues := conn.Nodes
 
 	if err != nil {
 		return fmt.Errorf("failed to fetch issues: %w", err)
