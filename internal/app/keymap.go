@@ -46,9 +46,10 @@ type KeyMap struct {
 	Project  key.Binding
 
 	// Utility
-	CopyBranch   key.Binding
-	OpenInLinear key.Binding
-	Comment      key.Binding
+	CopyBranch    key.Binding
+	OpenInBrowser key.Binding
+	OpenInLinear  key.Binding
+	Comment       key.Binding
 
 	// Views
 	Board    key.Binding
@@ -203,6 +204,10 @@ func DefaultKeyMap() KeyMap {
 		OpenInLinear: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in linear"),
+		),
+		OpenInLinear: key.NewBinding(
+			key.WithKeys("O"),
+			key.WithHelp("O", "open in Linear"),
 		),
 		Comment: key.NewBinding(
 			key.WithKeys("C"),

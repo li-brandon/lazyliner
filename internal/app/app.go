@@ -724,6 +724,28 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msg.String() == "a":
+		// Open assignee picker
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case msg.String() == "p":
+		// Open priority picker
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case msg.String() == "l":
+		// Open labels picker
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Manage Labels", m.labelsToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
 	case msg.String() == "P":
 		// Open project filter picker
 		m.picker = components.NewPickerModel("Filter by Project", m.projectsToItems(), m.width, m.height)
@@ -738,6 +760,12 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.String() == "o":
 		// Open in Linear (falls back to browser if app not installed)
+		if selected := m.listView.SelectedIssue(); selected != nil {
+			return m, m.openInLinear(selected.URL)
+		}
+
+	case msg.String() == "O":
+		// Open in Linear
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.openInLinear(selected.URL)
 		}
@@ -811,6 +839,12 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.String() == "o":
 		// Open in Linear (falls back to browser if app not installed)
+		if m.currentIssue != nil {
+			return m, m.openInLinear(m.currentIssue.URL)
+		}
+
+	case msg.String() == "O":
+		// Open in Linear
 		if m.currentIssue != nil {
 			return m, m.openInLinear(m.currentIssue.URL)
 		}
@@ -968,6 +1002,11 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.openInLinear(selected.URL)
 		}
 
+	case "O":
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			return m, m.openInLinear(selected.URL)
+		}
+
 	case "w":
 		if selected := m.kanbanView.SelectedIssue(); selected != nil {
 			return m, m.openWorkTask(selected.Identifier)
@@ -1108,6 +1147,16 @@ func (m Model) copyToClipboard(text, message string) tea.Cmd {
 }
 
 // openInLinear opens the issue in Linear app if installed, otherwise falls back to browser
+func (m Model) openInLinear(url string) tea.Cmd {
+	return func() tea.Msg {
+		if err := git.OpenInLinear(url); err != nil {
+			return StatusMsg{Message: "Failed to open Linear: " + err.Error(), IsError: true}
+		}
+		return StatusMsg{Message: "Opened in Linear", IsError: false}
+	}
+}
+
+// openInLinear opens the issue URL in the Linear desktop app
 func (m Model) openInLinear(url string) tea.Cmd {
 	return func() tea.Msg {
 		if err := git.OpenInLinear(url); err != nil {
