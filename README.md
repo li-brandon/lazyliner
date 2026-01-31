@@ -124,6 +124,7 @@ lazyliner create
 | `a` | Change assignee |
 | `p` | Change priority |
 | `l` | Manage labels |
+| `d` | Delete issue |
 | `y` | Copy branch name |
 | `o` | Open in browser |
 | `r` | Refresh |
