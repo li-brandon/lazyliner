@@ -205,10 +205,6 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in linear"),
 		),
-		OpenInLinear: key.NewBinding(
-			key.WithKeys("O"),
-			key.WithHelp("O", "open in Linear"),
-		),
 		Comment: key.NewBinding(
 			key.WithKeys("C"),
 			key.WithHelp("C", "comment"),

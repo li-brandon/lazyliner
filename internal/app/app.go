@@ -98,7 +98,7 @@ type Model struct {
 	issues         []linear.Issue
 	currentIssue   *linear.Issue
 	currentProject *linear.Project // Auto-detected from git repo (shows Project tab)
-	filterProject  *linear.Project // User-selected project filter (applies to all tabs)
+	filterProject  *linear.Project // User-selected project filter via 'P' (applies to all tabs)
 }
 
 func (m Model) tabNames() []string {
@@ -211,46 +211,47 @@ func (m Model) loadInitialData() tea.Cmd {
 		}
 
 		var matchedProject *linear.Project
+		var savedFilterProject *linear.Project
 
-		// First check if there's a saved project filter in config
+		// Check if there's a saved project filter in config
 		if savedProjectID != "" {
 			for i := range projects {
 				if projects[i].ID == savedProjectID {
+					savedFilterProject = &projects[i]
+					break
+				}
+			}
+		}
+
+		// Try to match project based on repo name (for Project tab)
+		repoName := git.GetRepoName()
+		if repoName != "" {
+			repoNameLower := strings.ToLower(repoName)
+			repoNameNormalized := strings.ReplaceAll(strings.ReplaceAll(repoNameLower, "-", ""), "_", "")
+			for i := range projects {
+				projectNameLower := strings.ToLower(projects[i].Name)
+				projectNameNormalized := strings.ReplaceAll(strings.ReplaceAll(projectNameLower, "-", ""), "_", "")
+				if strings.Contains(projectNameLower, repoNameLower) ||
+					strings.Contains(repoNameLower, projectNameLower) ||
+					strings.Contains(projectNameNormalized, repoNameNormalized) ||
+					strings.Contains(repoNameNormalized, projectNameNormalized) {
 					matchedProject = &projects[i]
 					break
 				}
 			}
 		}
 
-		// If no saved project, try to match based on repo name
-		if matchedProject == nil {
-			repoName := git.GetRepoName()
-			if repoName != "" {
-				repoNameLower := strings.ToLower(repoName)
-				repoNameNormalized := strings.ReplaceAll(strings.ReplaceAll(repoNameLower, "-", ""), "_", "")
-				for i := range projects {
-					projectNameLower := strings.ToLower(projects[i].Name)
-					projectNameNormalized := strings.ReplaceAll(strings.ReplaceAll(projectNameLower, "-", ""), "_", "")
-					if strings.Contains(projectNameLower, repoNameLower) ||
-						strings.Contains(repoNameLower, projectNameLower) ||
-						strings.Contains(projectNameNormalized, repoNameNormalized) ||
-						strings.Contains(repoNameNormalized, projectNameNormalized) {
-						matchedProject = &projects[i]
-						break
-					}
-				}
-			}
-		}
-
 		return DataLoadedMsg{
-			Viewer:         viewer,
-			Teams:          teams,
-			Projects:       projects,
-			MatchedProject: matchedProject,
+			Viewer:             viewer,
+			Teams:              teams,
+			Projects:           projects,
+			MatchedProject:     matchedProject,
+			SavedFilterProject: savedFilterProject,
 		}
 	}
 }
 
+// loadIssues loads issues based on the current tab and applies project filter
 func (m Model) loadIssues() tea.Cmd {
 	return m.loadIssuesWithCursor("")
 }
@@ -281,6 +282,7 @@ func (m Model) loadIssuesWithCursor(cursor string) tea.Cmd {
 		switch m.activeTab {
 		case TabMyIssues:
 			conn, err = m.client.GetMyIssues(ctx, 50, cursor)
+			// Apply project filter client-side for MyIssues
 			if err == nil && filterProjectID != "" {
 				conn.Nodes = filterIssuesByProject(conn.Nodes, filterProjectID)
 			}
@@ -454,6 +456,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.teams = msg.Teams
 		m.projects = msg.Projects
 		m.currentProject = msg.MatchedProject
+		m.filterProject = msg.SavedFilterProject
 		if m.currentProject != nil {
 			m.activeTab = TabProject
 		}
@@ -728,6 +731,7 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open assignee picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.pickerType = "assignee"
 			m.currentIssue = selected
 		}
 		return m, nil
@@ -736,6 +740,7 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open priority picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.pickerType = "priority"
 			m.currentIssue = selected
 		}
 		return m, nil
@@ -744,8 +749,11 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open labels picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Manage Labels", m.labelsToItems(), m.width, m.height)
+			m.pickerType = "labels"
 			m.currentIssue = selected
 		}
+		return m, nil
+
 	case msg.String() == "P":
 		// Open project filter picker
 		m.picker = components.NewPickerModel("Filter by Project", m.projectsToItems(), m.width, m.height)
@@ -760,12 +768,6 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.String() == "o":
 		// Open in Linear (falls back to browser if app not installed)
-		if selected := m.listView.SelectedIssue(); selected != nil {
-			return m, m.openInLinear(selected.URL)
-		}
-
-	case msg.String() == "O":
-		// Open in Linear
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.openInLinear(selected.URL)
 		}
@@ -839,12 +841,6 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.String() == "o":
 		// Open in Linear (falls back to browser if app not installed)
-		if m.currentIssue != nil {
-			return m, m.openInLinear(m.currentIssue.URL)
-		}
-
-	case msg.String() == "O":
-		// Open in Linear
 		if m.currentIssue != nil {
 			return m, m.openInLinear(m.currentIssue.URL)
 		}
@@ -968,6 +964,14 @@ func (m Model) updateEditView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) updateSetupView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
@@ -998,11 +1002,6 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "o":
-		if selected := m.kanbanView.SelectedIssue(); selected != nil {
-			return m, m.openInLinear(selected.URL)
-		}
-
-	case "O":
 		if selected := m.kanbanView.SelectedIssue(); selected != nil {
 			return m, m.openInLinear(selected.URL)
 		}
@@ -1080,12 +1079,16 @@ func (m Model) handlePickerSelection(item *components.PickerItem) (tea.Model, te
 			// "All Projects" selected - clear the filter
 			m.filterProject = nil
 			m.statusMsg = "Showing all projects"
+			// Save the preference (empty string clears saved project)
+			_ = config.SaveProjectFilter("")
 		} else {
 			// Find and set the selected project filter
 			for i := range m.projects {
 				if m.projects[i].ID == item.ID {
 					m.filterProject = &m.projects[i]
 					m.statusMsg = "Filtering by: " + m.projects[i].Name
+					// Save the preference
+					_ = config.SaveProjectFilter(m.projects[i].ID)
 					break
 				}
 			}
@@ -1156,16 +1159,6 @@ func (m Model) openInLinear(url string) tea.Cmd {
 	}
 }
 
-// openInLinear opens the issue URL in the Linear desktop app
-func (m Model) openInLinear(url string) tea.Cmd {
-	return func() tea.Msg {
-		if err := git.OpenInLinear(url); err != nil {
-			return StatusMsg{Message: "Failed to open Linear: " + err.Error(), IsError: true}
-		}
-		return StatusMsg{Message: "Opened in Linear", IsError: false}
-	}
-}
-
 func (m Model) openWorkTask(identifier string) tea.Cmd {
 	return func() tea.Msg {
 		workDir, err := os.Getwd()
@@ -1226,6 +1219,19 @@ func (m Model) priorityItems() []components.PickerItem {
 		{ID: "3", Label: "Medium", Icon: theme.PriorityIcon(3)},
 		{ID: "4", Label: "Low", Icon: theme.PriorityIcon(4)},
 	}
+}
+
+// labelsToItems converts labels to picker items
+func (m Model) labelsToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.labels))
+	for i, l := range m.labels {
+		items[i] = components.PickerItem{
+			ID:    l.ID,
+			Label: l.Name,
+			Icon:  "🏷️",
+		}
+	}
+	return items
 }
 
 // projectsToItems converts projects to picker items
@@ -1314,6 +1320,12 @@ func (m Model) View() string {
 func (m Model) renderHeader() string {
 	title := theme.LogoStyle.Render("🦥 Lazyliner")
 
+	// Show project filter indicator if active
+	var filterIndicator string
+	if m.filterProject != nil {
+		filterIndicator = theme.TextDimStyle.Render(" [📁 " + m.filterProject.Name + "]")
+	}
+
 	var userInfo string
 	if m.viewer != nil {
 		userInfo = theme.HeaderInfoStyle.Render(m.viewer.Name)
@@ -1329,7 +1341,7 @@ func (m Model) renderHeader() string {
 	}
 
 	// Build header
-	left := title
+	left := title + filterIndicator
 	right := userInfo
 	padding := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if padding < 0 {
