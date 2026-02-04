@@ -5,16 +5,16 @@ import (
 	"fmt"
 )
 
-// GetMyIssues returns issues assigned to the current user
-func (c *Client) GetMyIssues(ctx context.Context, limit int) ([]Issue, error) {
+// GetMyIssues returns issues assigned to the current user with pagination support
+func (c *Client) GetMyIssues(ctx context.Context, limit int, after string) (IssueConnection, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
 	query := `
-		query MyIssues($limit: Int!) {
+		query MyIssues($limit: Int!, $after: String) {
 			viewer {
-				assignedIssues(first: $limit, orderBy: updatedAt) {
+				assignedIssues(first: $limit, after: $after, orderBy: updatedAt) {
 					nodes {
 						id
 						identifier
@@ -67,6 +67,12 @@ func (c *Client) GetMyIssues(ctx context.Context, limit int) ([]Issue, error) {
 							}
 						}
 					}
+					pageInfo {
+						hasNextPage
+						hasPreviousPage
+						startCursor
+						endCursor
+					}
 				}
 			}
 		}
@@ -75,31 +81,38 @@ func (c *Client) GetMyIssues(ctx context.Context, limit int) ([]Issue, error) {
 	variables := map[string]interface{}{
 		"limit": limit,
 	}
+	if after != "" {
+		variables["after"] = after
+	}
 
 	var result struct {
 		Viewer struct {
 			AssignedIssues struct {
-				Nodes []rawIssue `json:"nodes"`
+				Nodes    []rawIssue `json:"nodes"`
+				PageInfo PageInfo   `json:"pageInfo"`
 			} `json:"assignedIssues"`
 		} `json:"viewer"`
 	}
 
 	if err := c.execute(ctx, query, variables, &result); err != nil {
-		return nil, err
+		return IssueConnection{}, err
 	}
 
-	return convertIssues(result.Viewer.AssignedIssues.Nodes), nil
+	return IssueConnection{
+		Nodes:    convertIssues(result.Viewer.AssignedIssues.Nodes),
+		PageInfo: result.Viewer.AssignedIssues.PageInfo,
+	}, nil
 }
 
-// GetIssues returns issues with optional filters
-func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) ([]Issue, error) {
+// GetIssues returns issues with optional filters and pagination support
+func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) (IssueConnection, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
 
 	query := `
-		query Issues($limit: Int!, $filter: IssueFilter) {
-			issues(first: $limit, filter: $filter, orderBy: updatedAt) {
+		query Issues($limit: Int!, $filter: IssueFilter, $after: String) {
+			issues(first: $limit, after: $after, filter: $filter, orderBy: updatedAt) {
 				nodes {
 					id
 					identifier
@@ -152,6 +165,12 @@ func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) ([]Issue, er
 						}
 					}
 				}
+				pageInfo {
+					hasNextPage
+					hasPreviousPage
+					startCursor
+					endCursor
+				}
 			}
 		}
 	`
@@ -161,18 +180,25 @@ func (c *Client) GetIssues(ctx context.Context, filter IssueFilter) ([]Issue, er
 		"limit":  filter.Limit,
 		"filter": issueFilter,
 	}
+	if filter.After != "" {
+		variables["after"] = filter.After
+	}
 
 	var result struct {
 		Issues struct {
-			Nodes []rawIssue `json:"nodes"`
+			Nodes    []rawIssue `json:"nodes"`
+			PageInfo PageInfo   `json:"pageInfo"`
 		} `json:"issues"`
 	}
 
 	if err := c.execute(ctx, query, variables, &result); err != nil {
-		return nil, err
+		return IssueConnection{}, err
 	}
 
-	return convertIssues(result.Issues.Nodes), nil
+	return IssueConnection{
+		Nodes:    convertIssues(result.Issues.Nodes),
+		PageInfo: result.Issues.PageInfo,
+	}, nil
 }
 
 // GetIssue returns a single issue by ID or identifier
@@ -328,6 +354,12 @@ type rawIssue struct {
 	} `json:"labels"`
 }
 
+// rawIssueConnection is the raw issue connection structure from the API
+type rawIssueConnection struct {
+	Nodes    []rawIssue `json:"nodes"`
+	PageInfo PageInfo   `json:"pageInfo"`
+}
+
 // convertIssues converts raw issues to the Issue type
 func convertIssues(raw []rawIssue) []Issue {
 	issues := make([]Issue, len(raw))
@@ -338,16 +370,16 @@ func convertIssues(raw []rawIssue) []Issue {
 	return issues
 }
 
-// GetProjectIssues returns issues for a specific project.
+// GetProjectIssues returns issues for a specific project with pagination support.
 // By default excludes completed/canceled issues unless includeCompleted is true.
-func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit int, includeCompleted bool) ([]Issue, error) {
+func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit int, includeCompleted bool, after string) (IssueConnection, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 
 	query := `
-		query ProjectIssues($limit: Int!, $filter: IssueFilter) {
-			issues(first: $limit, filter: $filter, orderBy: updatedAt) {
+		query ProjectIssues($limit: Int!, $filter: IssueFilter, $after: String) {
+			issues(first: $limit, after: $after, filter: $filter, orderBy: updatedAt) {
 				nodes {
 					id
 					identifier
@@ -400,6 +432,12 @@ func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit i
 						}
 					}
 				}
+				pageInfo {
+					hasNextPage
+					hasPreviousPage
+					startCursor
+					endCursor
+				}
 			}
 		}
 	`
@@ -422,18 +460,25 @@ func (c *Client) GetProjectIssues(ctx context.Context, projectID string, limit i
 		"limit":  limit,
 		"filter": filter,
 	}
+	if after != "" {
+		variables["after"] = after
+	}
 
 	var result struct {
 		Issues struct {
-			Nodes []rawIssue `json:"nodes"`
+			Nodes    []rawIssue `json:"nodes"`
+			PageInfo PageInfo   `json:"pageInfo"`
 		} `json:"issues"`
 	}
 
 	if err := c.execute(ctx, query, variables, &result); err != nil {
-		return nil, err
+		return IssueConnection{}, err
 	}
 
-	return convertIssues(result.Issues.Nodes), nil
+	return IssueConnection{
+		Nodes:    convertIssues(result.Issues.Nodes),
+		PageInfo: result.Issues.PageInfo,
+	}, nil
 }
 
 func buildIssueFilter(filter IssueFilter) map[string]interface{} {
@@ -464,4 +509,200 @@ func buildIssueFilter(filter IssueFilter) map[string]interface{} {
 	}
 
 	return f
+}
+
+// issueFields is the common GraphQL fragment for issue fields
+const issueFields = `
+	id
+	identifier
+	title
+	description
+	priority
+	estimate
+	createdAt
+	updatedAt
+	startedAt
+	completedAt
+	canceledAt
+	dueDate
+	branchName
+	url
+	state {
+		id
+		name
+		color
+		type
+		position
+	}
+	assignee {
+		id
+		name
+		displayName
+		email
+	}
+	creator {
+		id
+		name
+		displayName
+	}
+	team {
+		id
+		name
+		key
+	}
+	project {
+		id
+		name
+		icon
+		color
+	}
+	labels {
+		nodes {
+			id
+			name
+			color
+		}
+	}
+`
+
+// GetMyIssuesWithPagination returns issues assigned to the current user with pagination support
+func (c *Client) GetMyIssuesWithPagination(ctx context.Context, limit int, after string) ([]Issue, PageInfo, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := fmt.Sprintf(`
+		query MyIssues($limit: Int!, $after: String) {
+			viewer {
+				assignedIssues(first: $limit, after: $after, orderBy: updatedAt) {
+					nodes {
+						%s
+					}
+					pageInfo {
+						hasNextPage
+						hasPreviousPage
+						startCursor
+						endCursor
+					}
+				}
+			}
+		}
+	`, issueFields)
+
+	variables := map[string]interface{}{
+		"limit": limit,
+	}
+	if after != "" {
+		variables["after"] = after
+	}
+
+	var result struct {
+		Viewer struct {
+			AssignedIssues rawIssueConnection `json:"assignedIssues"`
+		} `json:"viewer"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	return convertIssues(result.Viewer.AssignedIssues.Nodes), result.Viewer.AssignedIssues.PageInfo, nil
+}
+
+// GetIssuesWithPagination returns issues with optional filters and pagination support
+func (c *Client) GetIssuesWithPagination(ctx context.Context, filter IssueFilter) ([]Issue, PageInfo, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+
+	query := fmt.Sprintf(`
+		query Issues($limit: Int!, $after: String, $filter: IssueFilter) {
+			issues(first: $limit, after: $after, filter: $filter, orderBy: updatedAt) {
+				nodes {
+					%s
+				}
+				pageInfo {
+					hasNextPage
+					hasPreviousPage
+					startCursor
+					endCursor
+				}
+			}
+		}
+	`, issueFields)
+
+	issueFilter := buildIssueFilter(filter)
+	variables := map[string]interface{}{
+		"limit":  filter.Limit,
+		"filter": issueFilter,
+	}
+	if filter.After != "" {
+		variables["after"] = filter.After
+	}
+
+	var result struct {
+		Issues rawIssueConnection `json:"issues"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	return convertIssues(result.Issues.Nodes), result.Issues.PageInfo, nil
+}
+
+// GetProjectIssuesWithPagination returns issues for a specific project with pagination support.
+// By default excludes completed/canceled issues unless includeCompleted is true.
+func (c *Client) GetProjectIssuesWithPagination(ctx context.Context, projectID string, limit int, includeCompleted bool, after string) ([]Issue, PageInfo, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := fmt.Sprintf(`
+		query ProjectIssues($limit: Int!, $after: String, $filter: IssueFilter) {
+			issues(first: $limit, after: $after, filter: $filter, orderBy: updatedAt) {
+				nodes {
+					%s
+				}
+				pageInfo {
+					hasNextPage
+					hasPreviousPage
+					startCursor
+					endCursor
+				}
+			}
+		}
+	`, issueFields)
+
+	filter := map[string]interface{}{
+		"project": map[string]interface{}{
+			"id": map[string]interface{}{"eq": projectID},
+		},
+	}
+
+	if !includeCompleted {
+		filter["state"] = map[string]interface{}{
+			"type": map[string]interface{}{
+				"nin": []string{"completed", "canceled"},
+			},
+		}
+	}
+
+	variables := map[string]interface{}{
+		"limit":  limit,
+		"filter": filter,
+	}
+	if after != "" {
+		variables["after"] = after
+	}
+
+	var result struct {
+		Issues rawIssueConnection `json:"issues"`
+	}
+
+	if err := c.execute(ctx, query, variables, &result); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	return convertIssues(result.Issues.Nodes), result.Issues.PageInfo, nil
 }
