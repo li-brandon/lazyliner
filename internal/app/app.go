@@ -15,6 +15,7 @@ import (
 	"github.com/brandonli/lazyliner/internal/ui/views/help"
 	"github.com/brandonli/lazyliner/internal/ui/views/issues"
 	"github.com/brandonli/lazyliner/internal/ui/views/kanban"
+	"github.com/brandonli/lazyliner/internal/ui/views/setup"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +32,7 @@ const (
 	ViewEdit
 	ViewHelp
 	ViewKanban
+	ViewSetup
 )
 
 // Tab represents the current tab in list view
@@ -76,6 +78,10 @@ type Model struct {
 	filteredIssues   []linear.Issue
 	allProjectIssues []linear.Issue
 
+	// Pagination state
+	pageInfo    linear.PageInfo
+	loadingMore bool
+
 	// Components
 	spinner    spinner.Model
 	listView   issues.ListModel
@@ -84,12 +90,15 @@ type Model struct {
 	editView   issues.EditModel
 	helpView   help.Model
 	kanbanView kanban.Model
+	setupView  setup.Model
 	picker     *components.PickerModel
+	pickerType string // "status", "assignee", "priority", "project"
 
 	// Current data
 	issues         []linear.Issue
 	currentIssue   *linear.Issue
-	currentProject *linear.Project
+	currentProject *linear.Project // Auto-detected from git repo (shows Project tab)
+	filterProject  *linear.Project // User-selected project filter via 'P' (applies to all tabs)
 }
 
 func (m Model) tabNames() []string {
@@ -148,20 +157,32 @@ func New(cfg *config.Config) Model {
 	ti.CharLimit = 100
 	ti.Width = 40
 
+	// Determine initial view based on API key configuration
+	initialView := ViewList
+	loading := true
+	if cfg.Linear.APIKey == "" {
+		initialView = ViewSetup
+		loading = false
+	}
+
 	return Model{
 		config:      cfg,
 		keymap:      DefaultKeyMap(),
 		client:      linear.NewClient(cfg.Linear.APIKey),
-		loading:     true,
+		loading:     loading,
 		spinner:     s,
 		activeTab:   TabMyIssues,
-		view:        ViewList,
+		view:        initialView,
 		searchInput: ti,
 	}
 }
 
 // Init initializes the application
 func (m Model) Init() tea.Cmd {
+	// Don't load data if we're in setup view (no API key)
+	if m.view == ViewSetup {
+		return nil
+	}
 	return tea.Batch(
 		m.spinner.Tick,
 		m.loadInitialData(),
@@ -170,6 +191,7 @@ func (m Model) Init() tea.Cmd {
 
 // loadInitialData loads the initial data from Linear
 func (m Model) loadInitialData() tea.Cmd {
+	savedProjectID := m.config.Defaults.Project
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -189,6 +211,19 @@ func (m Model) loadInitialData() tea.Cmd {
 		}
 
 		var matchedProject *linear.Project
+		var savedFilterProject *linear.Project
+
+		// Check if there's a saved project filter in config
+		if savedProjectID != "" {
+			for i := range projects {
+				if projects[i].ID == savedProjectID {
+					savedFilterProject = &projects[i]
+					break
+				}
+			}
+		}
+
+		// Try to match project based on repo name (for Project tab)
 		repoName := git.GetRepoName()
 		if repoName != "" {
 			repoNameLower := strings.ToLower(repoName)
@@ -207,44 +242,100 @@ func (m Model) loadInitialData() tea.Cmd {
 		}
 
 		return DataLoadedMsg{
-			Viewer:         viewer,
-			Teams:          teams,
-			Projects:       projects,
-			MatchedProject: matchedProject,
+			Viewer:             viewer,
+			Teams:              teams,
+			Projects:           projects,
+			MatchedProject:     matchedProject,
+			SavedFilterProject: savedFilterProject,
 		}
 	}
 }
 
-// loadIssues loads issues based on the current tab
+// loadIssues loads issues based on the current tab and applies project filter
 func (m Model) loadIssues() tea.Cmd {
+	return m.loadIssuesWithCursor("")
+}
+
+func (m Model) loadMoreIssues() tea.Cmd {
+	if !m.pageInfo.HasNextPage || m.loadingMore {
+		return nil
+	}
+	return m.loadIssuesWithCursor(m.pageInfo.EndCursor)
+}
+
+func (m Model) loadIssuesWithCursor(cursor string) tea.Cmd {
+	filterProjectID := ""
+	if m.filterProject != nil {
+		filterProjectID = m.filterProject.ID
+	}
+	currentProjectID := ""
+	if m.currentProject != nil {
+		currentProjectID = m.currentProject.ID
+	}
+	isAppend := cursor != ""
+
 	return func() tea.Msg {
 		ctx := context.Background()
-		var loadedIssues []linear.Issue
+		var conn linear.IssueConnection
 		var err error
 
 		switch m.activeTab {
 		case TabMyIssues:
-			loadedIssues, err = m.client.GetMyIssues(ctx, 100)
+			conn, err = m.client.GetMyIssues(ctx, 50, cursor)
+			// Apply project filter client-side for MyIssues
+			if err == nil && filterProjectID != "" {
+				conn.Nodes = filterIssuesByProject(conn.Nodes, filterProjectID)
+			}
 		case TabAllIssues:
-			loadedIssues, err = m.client.GetIssues(ctx, linear.IssueFilter{Limit: 100})
+			filter := linear.IssueFilter{Limit: 50, After: cursor}
+			if filterProjectID != "" {
+				filter.ProjectID = filterProjectID
+			}
+			conn, err = m.client.GetIssues(ctx, filter)
 		case TabActive:
-			loadedIssues, err = m.client.GetIssues(ctx, linear.IssueFilter{
+			filter := linear.IssueFilter{
 				StateType: "started",
-				Limit:     100,
-			})
+				Limit:     50,
+				After:     cursor,
+			}
+			if filterProjectID != "" {
+				filter.ProjectID = filterProjectID
+			}
+			conn, err = m.client.GetIssues(ctx, filter)
 		case TabBacklog:
-			loadedIssues, err = m.client.GetIssues(ctx, linear.IssueFilter{
+			filter := linear.IssueFilter{
 				StateType: "backlog",
-				Limit:     100,
-			})
+				Limit:     50,
+				After:     cursor,
+			}
+			if filterProjectID != "" {
+				filter.ProjectID = filterProjectID
+			}
+			conn, err = m.client.GetIssues(ctx, filter)
 		case TabProject:
-			if m.currentProject != nil {
-				loadedIssues, err = m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, false)
+			if currentProjectID != "" {
+				conn, err = m.client.GetProjectIssues(ctx, currentProjectID, 50, false, cursor)
 			}
 		}
 
-		return IssuesLoadedMsg{Issues: loadedIssues, Err: err}
+		return IssuesLoadedMsg{
+			Issues:   conn.Nodes,
+			PageInfo: conn.PageInfo,
+			Append:   isAppend,
+			Err:      err,
+		}
 	}
+}
+
+// filterIssuesByProject filters issues to only include those belonging to a specific project
+func filterIssuesByProject(issues []linear.Issue, projectID string) []linear.Issue {
+	var filtered []linear.Issue
+	for _, issue := range issues {
+		if issue.Project != nil && issue.Project.ID == projectID {
+			filtered = append(filtered, issue)
+		}
+	}
+	return filtered
 }
 
 func (m Model) loadAllProjectIssues() tea.Cmd {
@@ -253,8 +344,8 @@ func (m Model) loadAllProjectIssues() tea.Cmd {
 	}
 	return func() tea.Msg {
 		ctx := context.Background()
-		allIssues, err := m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, true)
-		return AllProjectIssuesLoadedMsg{Issues: allIssues, Err: err}
+		conn, err := m.client.GetProjectIssues(ctx, m.currentProject.ID, 100, true, "")
+		return AllProjectIssuesLoadedMsg{Issues: conn.Nodes, Err: err}
 	}
 }
 
@@ -305,6 +396,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Handle picker if it's open
+		if m.picker != nil {
+			return m.updatePicker(msg)
+		}
+
 		// Handle view-specific keys
 		switch m.view {
 		case ViewList:
@@ -317,7 +413,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEditView(msg)
 		case ViewKanban:
 			return m.updateKanbanView(msg)
+		case ViewSetup:
+			return m.updateSetupView(msg)
 		}
+
+	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			if clickedTab := m.getClickedTab(msg.X, msg.Y); clickedTab >= 0 {
+				newTab := m.tabAtIndex(clickedTab)
+				if newTab != m.activeTab {
+					m.activeTab = newTab
+					m.loading = true
+					return m, m.loadIssues()
+				}
+			}
+		}
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -345,6 +456,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.teams = msg.Teams
 		m.projects = msg.Projects
 		m.currentProject = msg.MatchedProject
+		m.filterProject = msg.SavedFilterProject
 		if m.currentProject != nil {
 			m.activeTab = TabProject
 		}
@@ -357,13 +469,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case IssuesLoadedMsg:
 		m.loading = false
+		m.loadingMore = false
 		if msg.Err != nil {
 			m.statusMsg = "Error loading issues: " + msg.Err.Error()
 			m.statusErr = true
 			return m, nil
 		}
-		m.issues = sortIssues(msg.Issues)
-		m.listView = issues.NewListModel(m.issues, m.width, m.height-4)
+		m.pageInfo = msg.PageInfo
+		if msg.Append {
+			m.issues = appendUniqueIssues(m.issues, msg.Issues)
+		} else {
+			m.issues = msg.Issues
+		}
+		m.issues = sortIssues(m.issues)
+		m.listView = issues.NewListModelWithPagination(m.issues, m.width, m.height-4, m.pageInfo.HasNextPage)
+		if msg.PageInfo.HasNextPage && !msg.Append {
+			m.statusMsg = fmt.Sprintf("Loaded %d issues (more available, press L)", len(m.issues))
+		} else if msg.Append {
+			m.statusMsg = fmt.Sprintf("Loaded %d total issues", len(m.issues))
+		}
 		return m, nil
 
 	case WorkflowStatesLoadedMsg:
@@ -598,6 +722,7 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open status picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Change Status", m.statesToItems(), m.width, m.height)
+			m.pickerType = "status"
 			m.currentIssue = selected
 		}
 		return m, nil
@@ -606,6 +731,7 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open assignee picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.pickerType = "assignee"
 			m.currentIssue = selected
 		}
 		return m, nil
@@ -614,6 +740,7 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open priority picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.pickerType = "priority"
 			m.currentIssue = selected
 		}
 		return m, nil
@@ -622,8 +749,15 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open labels picker
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			m.picker = components.NewPickerModel("Manage Labels", m.labelsToItems(), m.width, m.height)
+			m.pickerType = "labels"
 			m.currentIssue = selected
 		}
+		return m, nil
+
+	case msg.String() == "P":
+		// Open project filter picker
+		m.picker = components.NewPickerModel("Filter by Project", m.projectsToItems(), m.width, m.height)
+		m.pickerType = "project"
 		return m, nil
 
 	case msg.String() == "y":
@@ -633,9 +767,9 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case msg.String() == "o":
-		// Open in browser
+		// Open in Linear (falls back to browser if app not installed)
 		if selected := m.listView.SelectedIssue(); selected != nil {
-			return m, m.openInBrowser(selected.URL)
+			return m, m.openInLinear(selected.URL)
 		}
 
 	case msg.String() == "b":
@@ -651,6 +785,13 @@ func (m Model) updateListView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case msg.String() == "d":
 		if selected := m.listView.SelectedIssue(); selected != nil {
 			return m, m.deleteIssue(selected.ID, selected.Identifier)
+		}
+
+	case msg.String() == "L":
+		if m.pageInfo.HasNextPage && !m.loadingMore {
+			m.loadingMore = true
+			m.statusMsg = "Loading more issues..."
+			return m, m.loadMoreIssues()
 		}
 	}
 
@@ -672,6 +813,7 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open status picker
 		if m.currentIssue != nil {
 			m.picker = components.NewPickerModel("Change Status", m.statesToItems(), m.width, m.height)
+			m.pickerType = "status"
 		}
 		return m, nil
 
@@ -679,6 +821,7 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open assignee picker
 		if m.currentIssue != nil {
 			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.pickerType = "assignee"
 		}
 		return m, nil
 
@@ -686,6 +829,7 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open priority picker
 		if m.currentIssue != nil {
 			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.pickerType = "priority"
 		}
 		return m, nil
 
@@ -696,9 +840,9 @@ func (m Model) updateDetailView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case msg.String() == "o":
-		// Open in browser
+		// Open in Linear (falls back to browser if app not installed)
 		if m.currentIssue != nil {
-			return m, m.openInBrowser(m.currentIssue.URL)
+			return m, m.openInLinear(m.currentIssue.URL)
 		}
 
 	case msg.String() == "w":
@@ -788,6 +932,13 @@ func (m Model) updateCreateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Submit the form
 		input := m.createView.GetInput()
 		return m, m.createIssue(input)
+
+	case msg.String() == "enter":
+		// Submit the form when on a select field (Team, Project, Priority, Assignee)
+		if m.createView.IsOnSelectField() {
+			input := m.createView.GetInput()
+			return m, m.createIssue(input)
+		}
 	}
 
 	// Forward to create view
@@ -811,6 +962,14 @@ func (m Model) updateEditView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.editView, cmd = m.editView.Update(msg)
 	return m, cmd
+}
+
+func (m Model) updateSetupView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
 }
 
 func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -876,7 +1035,7 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "o":
 		if selected := m.kanbanView.SelectedIssue(); selected != nil {
-			return m, m.openInBrowser(selected.URL)
+			return m, m.openInLinear(selected.URL)
 		}
 
 	case "w":
@@ -893,6 +1052,89 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.kanbanView, cmd = m.kanbanView.Update(msg)
 	return m, cmd
+}
+
+// updatePicker handles picker interactions
+func (m Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.picker = nil
+		m.pickerType = ""
+		return m, nil
+
+	case "enter":
+		if m.picker != nil {
+			selected := m.picker.SelectedItem()
+			if selected != nil {
+				return m.handlePickerSelection(selected)
+			}
+		}
+		m.picker = nil
+		m.pickerType = ""
+		return m, nil
+	}
+
+	// Forward navigation keys to picker
+	var cmd tea.Cmd
+	m.picker, cmd = m.picker.Update(msg)
+	return m, cmd
+}
+
+// handlePickerSelection handles the selection from a picker
+func (m Model) handlePickerSelection(item *components.PickerItem) (tea.Model, tea.Cmd) {
+	defer func() {
+		m.picker = nil
+		m.pickerType = ""
+	}()
+
+	switch m.pickerType {
+	case "status":
+		if m.currentIssue != nil {
+			return m, m.updateIssueState(m.currentIssue.ID, item.ID)
+		}
+	case "assignee":
+		if m.currentIssue != nil {
+			assigneeID := item.ID
+			input := linear.IssueUpdateInput{AssigneeID: &assigneeID}
+			return m, m.updateIssue(m.currentIssue.ID, input)
+		}
+	case "priority":
+		if m.currentIssue != nil {
+			priority := 0
+			fmt.Sscanf(item.ID, "%d", &priority)
+			input := linear.IssueUpdateInput{Priority: &priority}
+			return m, m.updateIssue(m.currentIssue.ID, input)
+		}
+	case "project":
+		// Handle project filter selection
+		if item.ID == "" {
+			// "All Projects" selected - clear the filter
+			m.filterProject = nil
+			m.statusMsg = "Showing all projects"
+			// Save the preference (empty string clears saved project)
+			_ = config.SaveProjectFilter("")
+		} else {
+			// Find and set the selected project filter
+			for i := range m.projects {
+				if m.projects[i].ID == item.ID {
+					m.filterProject = &m.projects[i]
+					m.statusMsg = "Filtering by: " + m.projects[i].Name
+					// Save the preference
+					_ = config.SaveProjectFilter(m.projects[i].ID)
+					break
+				}
+			}
+		}
+		m.statusErr = false
+		m.loading = true
+		m.picker = nil
+		m.pickerType = ""
+		return m, m.loadIssues()
+	}
+
+	m.picker = nil
+	m.pickerType = ""
+	return m, nil
 }
 
 // createIssue creates a new issue
@@ -939,13 +1181,13 @@ func (m Model) copyToClipboard(text, message string) tea.Cmd {
 	}
 }
 
-// openInBrowser opens a URL in the default browser
-func (m Model) openInBrowser(url string) tea.Cmd {
+// openInLinear opens the issue in Linear app if installed, otherwise falls back to browser
+func (m Model) openInLinear(url string) tea.Cmd {
 	return func() tea.Msg {
-		if err := git.OpenInBrowser(url); err != nil {
-			return StatusMsg{Message: "Failed to open browser: " + err.Error(), IsError: true}
+		if err := git.OpenInLinear(url); err != nil {
+			return StatusMsg{Message: "Failed to open Linear: " + err.Error(), IsError: true}
 		}
-		return StatusMsg{Message: "Opened in browser", IsError: false}
+		return StatusMsg{Message: "Opened in Linear", IsError: false}
 	}
 }
 
@@ -1024,10 +1266,39 @@ func (m Model) labelsToItems() []components.PickerItem {
 	return items
 }
 
+// projectsToItems converts projects to picker items
+func (m Model) projectsToItems() []components.PickerItem {
+	items := make([]components.PickerItem, len(m.projects)+1)
+	// Add "All Projects" option first
+	items[0] = components.PickerItem{
+		ID:    "",
+		Label: "All Projects",
+		Icon:  "📁",
+	}
+	for i, p := range m.projects {
+		icon := "📁"
+		if p.Icon != "" {
+			icon = p.Icon
+		}
+		items[i+1] = components.PickerItem{
+			ID:    p.ID,
+			Label: p.Name,
+			Icon:  icon,
+		}
+	}
+	return items
+}
+
 // View renders the application
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
+	}
+
+	// Show setup view without header/status bar
+	if m.view == ViewSetup {
+		m.setupView = setup.New(m.width, m.height)
+		return m.setupView.View()
 	}
 
 	if m.showHelp {
@@ -1062,17 +1333,30 @@ func (m Model) View() string {
 	statusBar := m.renderStatusBar()
 
 	// Combine all parts
-	return lipgloss.JoinVertical(
+	mainView := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		content,
 		statusBar,
 	)
+
+	// Overlay picker if open
+	if m.picker != nil {
+		return m.picker.View()
+	}
+
+	return mainView
 }
 
 // renderHeader renders the application header
 func (m Model) renderHeader() string {
 	title := theme.LogoStyle.Render("🦥 Lazyliner")
+
+	// Show project filter indicator if active
+	var filterIndicator string
+	if m.filterProject != nil {
+		filterIndicator = theme.TextDimStyle.Render(" [📁 " + m.filterProject.Name + "]")
+	}
 
 	var userInfo string
 	if m.viewer != nil {
@@ -1089,7 +1373,7 @@ func (m Model) renderHeader() string {
 	}
 
 	// Build header
-	left := title
+	left := title + filterIndicator
 	right := userInfo
 	padding := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if padding < 0 {
@@ -1179,7 +1463,7 @@ func (m Model) renderHelp() string {
 			{"a", "assignee"},
 			{"p", "priority"},
 			{"y", "copy branch"},
-			{"o", "open"},
+			{"o", "open in linear"},
 			{"esc", "back"},
 			{"?", "help"},
 		}
@@ -1219,6 +1503,7 @@ func (m Model) renderHelp() string {
 			{"a", "assignee"},
 			{"p", "priority"},
 			{"/", "search"},
+			{"P", "project"},
 			{"b", "board"},
 			{"c", "create"},
 			{"?", "help"},
@@ -1255,6 +1540,21 @@ func splitIntoWords(s string) []string {
 	s = strings.ReplaceAll(s, "-", " ")
 	s = strings.ReplaceAll(s, "_", " ")
 	return strings.Fields(s)
+}
+
+func appendUniqueIssues(existing, newIssues []linear.Issue) []linear.Issue {
+	seen := make(map[string]bool)
+	for _, issue := range existing {
+		seen[issue.ID] = true
+	}
+	result := existing
+	for _, issue := range newIssues {
+		if !seen[issue.ID] {
+			result = append(result, issue)
+			seen[issue.ID] = true
+		}
+	}
+	return result
 }
 
 // stateTypePriority returns the sort priority for a workflow state type.
@@ -1327,4 +1627,28 @@ func sortIssues(issuesList []linear.Issue) []linear.Issue {
 	})
 
 	return sorted
+}
+
+func (m Model) getClickedTab(x, y int) int {
+	// Tab bar is on Y=1 (second line, 0-indexed)
+	if y != 1 {
+		return -1
+	}
+
+	// Calculate tab positions: HeaderStyle has Padding(0, 1), so tabs start at X=1
+	currentX := 1
+	for i, name := range m.tabNames() {
+		var renderedTab string
+		if m.tabAtIndex(i) == m.activeTab {
+			renderedTab = theme.ActiveTabStyle.Render(name)
+		} else {
+			renderedTab = theme.TabStyle.Render(name)
+		}
+		tabWidth := lipgloss.Width(renderedTab)
+		if x >= currentX && x < currentX+tabWidth {
+			return i
+		}
+		currentX += tabWidth
+	}
+	return -1
 }

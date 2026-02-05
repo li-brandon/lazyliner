@@ -6,17 +6,20 @@ import "github.com/brandonli/lazyliner/internal/linear"
 
 // DataLoadedMsg is sent when initial data is loaded
 type DataLoadedMsg struct {
-	Viewer         *linear.Viewer
-	Teams          []linear.Team
-	Projects       []linear.Project
-	MatchedProject *linear.Project
-	Err            error
+	Viewer             *linear.Viewer
+	Teams              []linear.Team
+	Projects           []linear.Project
+	MatchedProject     *linear.Project // Auto-detected from git repo (for Project tab)
+	SavedFilterProject *linear.Project // Restored from config (for project filter)
+	Err                error
 }
 
 // IssuesLoadedMsg is sent when issues are loaded
 type IssuesLoadedMsg struct {
-	Issues []linear.Issue
-	Err    error
+	Issues   []linear.Issue
+	PageInfo linear.PageInfo
+	Append   bool
+	Err      error
 }
 
 // IssueLoadedMsg is sent when a single issue is loaded
@@ -129,4 +132,9 @@ type OpenInBrowserMsg struct {
 type AllProjectIssuesLoadedMsg struct {
 	Issues []linear.Issue
 	Err    error
+}
+
+// ProjectSelectedMsg is sent when a project is selected from the picker
+type ProjectSelectedMsg struct {
+	Project *linear.Project // nil means "All Projects"
 }
