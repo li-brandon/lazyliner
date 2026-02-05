@@ -996,6 +996,38 @@ func (m Model) updateKanbanView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = ViewList
 		return m, m.loadIssues()
 
+	case "s":
+		// Open status picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Status", m.statesToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case "a":
+		// Open assignee picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Assignee", m.usersToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case "p":
+		// Open priority picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Change Priority", m.priorityItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
+	case "l":
+		// Open labels picker
+		if selected := m.kanbanView.SelectedIssue(); selected != nil {
+			m.picker = components.NewPickerModel("Manage Labels", m.labelsToItems(), m.width, m.height)
+			m.currentIssue = selected
+		}
+		return m, nil
+
 	case "y":
 		if selected := m.kanbanView.SelectedIssue(); selected != nil {
 			return m, m.copyToClipboard(selected.BranchName, "Branch name copied")
@@ -1443,11 +1475,22 @@ func (m Model) renderHelp() string {
 			{"h/l", "columns"},
 			{"j/k", "cards"},
 			{"H/L", "move"},
+			{"s", "status"},
+			{"a", "assignee"},
+			{"p", "priority"},
 			{"enter", "view"},
-			{"d", "delete"},
-			{"w", "work"},
 			{"esc", "list"},
 			{"?", "help"},
+		}
+	case ViewCreate, ViewEdit:
+		keys = []struct {
+			key  string
+			desc string
+		}{
+			{"tab", "next field"},
+			{"←/→", "change"},
+			{"ctrl+s", "save"},
+			{"esc", "cancel"},
 		}
 	default:
 		keys = []struct {
@@ -1456,12 +1499,13 @@ func (m Model) renderHelp() string {
 		}{
 			{"j/k", "navigate"},
 			{"enter", "view"},
+			{"s", "status"},
+			{"a", "assignee"},
+			{"p", "priority"},
 			{"/", "search"},
 			{"P", "project"},
 			{"b", "board"},
 			{"c", "create"},
-			{"d", "delete"},
-			{"w", "work"},
 			{"?", "help"},
 			{"q", "quit"},
 		}
